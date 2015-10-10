@@ -56,13 +56,12 @@ int main(int argc, char *argv[])
     }
 
     MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
-
     if (rank != rank_num - 1)
         local_arr = new int[num_per_node+1];
 	
     // MPI_Scatter (send_buf, send_count, send_type, recv_buf, recv_count, recv_type, root, comm)
 	MPI_Scatter(root_arr, num_per_node, MPI_INT, local_arr, num_per_node, MPI_INT, ROOT, MPI_COMM_WORLD);
-    printf("[Rank %d] num_per_node_size = %d\n" ,rank, num_per_node); 
+    // printf("[Rank %d] num_per_node_size = %d\n" ,rank, num_per_node); 
     MPI_Barrier(MPI_COMM_WORLD);
     
     for (int i = 0; i < num_per_node; ++i)
@@ -70,12 +69,11 @@ int main(int argc, char *argv[])
             printf("[Rank %d] local_arr[%d] = %d\n", rank, i, local_arr[i]);
     
     if (rank == 0) {
-        sleep(1);
         for (int i = 0; i < num_per_node; ++i)
              printf("[Rank %d] root_arr[%d] = %d\n", rank, i, local_arr[i]);
         delete [] root_arr;
     }
-    
+    delete [] local_arr; 
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
      
