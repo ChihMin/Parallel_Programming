@@ -18,24 +18,28 @@ int main(int argc, char *argv[])
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &size);
     
+    MPI_File fin;
     MPI_Status status;
     int *root_arr;
-    MPI_File fin;
     int ret = MPI_File_open(MPI_COMM_WORLD, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, &fin);
+   
+    printf("My rank is %d \n", rank); 
     
-    if (rank == 0) {
+    if (rank == ROOT) {
         root_arr = new int[N+3];
         printf("Enter rank 0 statement ... \n");
-        printf("File open status = %d\n" ,ret);
         MPI_File_read(fin, root_arr, N, MPI_INT, &status);
         
         for (int i = 0; i < N; ++i)
              printf("[Rank %d] root_arr[%d] = %d\n", rank, i, root_arr[i]); 
-        MPI_File_close(&fin);
         printf("Out Rank 0 statement ... \n");
     } 
     
+    
+    MPI_File_close(&fin);
+    
     MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
+    
     int rank_num = size > N ? N : size;
     int num_per_node = N / rank_num;
     int *local_arr;
@@ -55,24 +59,26 @@ int main(int argc, char *argv[])
         local_arr = new int[num_per_node];
     }
 
-    MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
+//    MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
     if (rank != rank_num - 1)
         local_arr = new int[num_per_node+1];
 	
+
     // MPI_Scatter (send_buf, send_count, send_type, recv_buf, recv_count, recv_type, root, comm)
 	MPI_Scatter(root_arr, num_per_node, MPI_INT, local_arr, num_per_node, MPI_INT, ROOT, MPI_COMM_WORLD);
-    // printf("[Rank %d] num_per_node_size = %d\n" ,rank, num_per_node); 
-    MPI_Barrier(MPI_COMM_WORLD);
-    
+    printf("[Rank %d] num_per_node_size = %d\n" ,rank, num_per_node); 
+
     for (int i = 0; i < num_per_node; ++i)
         if (rank != 0) 
-            printf("[Rank %d] local_arr[%d] = %d\n", rank, i, local_arr[i]);
-    
+            printf("[Rank %d] local_arr[%d] = %d\n", rank, i, local_arr[i]); 
+  
+ 
     if (rank == 0) {
         for (int i = 0; i < num_per_node; ++i)
              printf("[Rank %d] root_arr[%d] = %d\n", rank, i, local_arr[i]);
         delete [] root_arr;
     }
+
     delete [] local_arr; 
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
