@@ -7,7 +7,7 @@ fi
 
 echo "number of n = $2"
 clang++ read.cpp -o "read"
-mpic++ -o prac -O2 prac.cpp
+mpic++ -o prac -g prac.cpp
 if [ $? != 0 ]; then
   echo "Compile ERROR, script stopping ... "
   exit 1
