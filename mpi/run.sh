@@ -1,16 +1,16 @@
 #!/bin/bash
 
-if [ $# -lt 3 ]; then
+if [ $# -lt 4 ]; then
   echo "Please enter the correct format !"
   exit 0
 fi
 
 echo "number of n = $2"
-clang++ read.cpp -o "read"
+# clang++ read.cpp -o "read"
 mpic++ -o prac -g prac.cpp
 if [ $? != 0 ]; then
   echo "Compile ERROR, script stopping ... "
   exit 1
 fi
-./"read" $2 $3
-mpiexec  -np $1 ./prac $2 $3
+# ./"read" $2 $3
+time mpiexec  -np $1 ./prac $2 $3 $4
