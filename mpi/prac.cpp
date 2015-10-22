@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
         MPI_File_read(fin, root_arr, N, MPI_INT, &status);
         
         for (int i = 0; i < N; ++i)
-             printf("[Rank %d] root_arr[%d] = %d\n", rank, i, root_arr[i]); 
+             printf("[START] [Rank %d] root_arr[%d] = %d\n", rank, i, root_arr[i]); 
         printf("Out Rank 0 statement ... \n");
     } 
     
@@ -47,15 +47,18 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
     
     int rank_num = size > N ? N : size;
+    const int LAST = rank_num - 1;
     int num_per_node = N / rank_num;
     int *local_arr;
     int num_per_node_diff = N - num_per_node * size;
+    int diff = num_per_node_diff;
+    bool has_remain = false;
     if (num_per_node_diff > 0) {
         // Send remaining elements to size - 1
-        int diff = num_per_node_diff; 
+        has_remain = true; 
         if (rank == ROOT) {
-            MPI_Send(root_arr + N - diff, diff, MPI_INT, size - 1, 0, MPI_COMM_WORLD); 
-        } else if (rank == size - 1) {
+            MPI_Send(root_arr + N - diff, diff, MPI_INT, LAST, 0, MPI_COMM_WORLD); 
+        } else if (rank == LAST) {
             // Handle special case
             num_per_node += num_per_node_diff;
             local_arr = new int[num_per_node+1];
@@ -77,15 +80,12 @@ int main(int argc, char *argv[])
     int round = num_per_node;
     for (int i = 0; i < num_per_node; ++i) {
         bool need_send = false;
-        int start_pos = 0;
-        if (i & 1) 
-            start_pos = 1;
     
         if ((i & 1)^(num_per_node & 1)) { 
             need_send = true;
-        } 
+        }
          
-        for (int j = start_pos; j < num_per_node; j+=2) {
+        for (int j = i & 1; j < num_per_node; j+=2) {
             if (j+1 < num_per_node) {
                 if (local_arr[j] > local_arr[j+1]) 
                     swap(local_arr[j], local_arr[j+1]);        
@@ -96,14 +96,31 @@ int main(int argc, char *argv[])
         }
     }
     MPI_Barrier(MPI_COMM_WORLD); // Wait for rank0 to read file 
+
+    int *ans;
+    if (rank == ROOT) 
+        ans = new int[N+3];
+
+    if (has_remain && rank == rank_num - 1) {
+        MPI_Gather(local_arr, num_per_node - diff, MPI_INT, ans, num_per_node - diff, MPI_INT, ROOT, MPI_COMM_WORLD);
+        MPI_Send(local_arr + num_per_node - diff, diff, MPI_INT, ROOT, 0, MPI_COMM_WORLD); 
+    }
+    else {
+        MPI_Gather(local_arr, num_per_node, MPI_INT, ans, num_per_node, MPI_INT, ROOT, MPI_COMM_WORLD);
+        if (has_remain && rank == ROOT)
+            MPI_Recv(ans + N - diff, diff, MPI_INT, LAST, MPI_ANY_TAG, MPI_COMM_WORLD, &status);  
+    }
+   
+
+    MPI_Barrier(MPI_COMM_WORLD);
     for (int i = 0; i < num_per_node; ++i)
-        if (rank != 0) 
-            printf("[Rank %d] local_arr[%d] = %d\n", rank, i, local_arr[i]); 
-  
- 
+        printf("[Rank %d] local_arr[%d] = %d\n", rank, i, local_arr[i]); 
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
-        for (int i = 0; i < num_per_node; ++i)
-             printf("[Rank %d] root_arr[%d] = %d\n", rank, i, local_arr[i]);
+        for (int i = 0; i < N; ++i)
+             printf("[FINAL] [Rank %d] ans[%d] = %d\n", rank, i, ans[i]);
         delete [] root_arr;
     }
 
