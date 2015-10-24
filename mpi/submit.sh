@@ -1,6 +1,5 @@
 #!/bin/bash
 
-report=run_report.txt
 function clean() {
   rm CHIHMIN* 
 }
@@ -19,14 +18,17 @@ function run_job() {
     return 1
   fi
   
-  exe=./prac
+  src=basic_bcast
+  exe=./$src
+  report=${src}_run_report.txt
   job_name=CHIHMIN_JOB
-  job=new_job_${2}_${3}.sh
+  job=new_job_${1}_${2}_${3}.sh
   N=$1
   nodes=$2
   ppn=$3
+  time_limit=3
 
-  mpic++ prac.cpp -o prac
+  mpic++ ${src}.cpp -o $src
   if [ $? != 0 ]; then
     echo "Compile error, process is stopping ...."
     exit 1
@@ -37,7 +39,7 @@ function run_job() {
   echo "#PBS -N $job_name" >> $job
   echo "#PBS -r n" >> $job
   echo "#PBS -l nodes=$nodes:ppn=$ppn" >> $job
-  echo "#PBS -l walltime=00:30:00" >> $job
+  echo "#PBS -l walltime=00:$time_limit:00" >> $job
   echo "cd \$PBS_O_WORKDIR" >> $job
   echo "time mpiexec $exe $N IN_84000000 output/testcase_${nodes}_${ppn}_${N}.out" >> $job 
 
@@ -76,7 +78,7 @@ function go_bench() {
     j=0
     while [ $j -lt 12 ]; do
       j=$(($j+1))
-      run_job 1000000 $i $j
+      run_job 100000 $i $j
     done
   done
 }
