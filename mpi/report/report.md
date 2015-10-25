@@ -69,13 +69,33 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 
 ### Performance mesurement
 
-* 相同Process的效能趨勢：對於相同process數(node x ppn)，看執行時間的趨勢，預期是越多process，他的執行時間會越少。對於這個執行時間的量測方法採用『幾何平均』。也就是說，如果多個相同process數量的數據，看有幾組，就對這幾組數據的乘積開幾次方根。（藍色線是Basic Version，紅色線是Advanced Version）
+* 相同Process的效能趨勢：對於相同process數($nodes \times ppn$)，看執行時間的趨勢，預期是越多process，他的執行時間會越少。對於這個執行時間的量測方法採用『幾何平均』。也就是說，如果多個相同process數量的數據，看有幾組，就對這幾組數據的乘積開幾次方根。（藍色線是Basic Version，紅色線是Advanced Version）
+
+	**N = 100000**
 
 	![img](./Total_N_100000.png)
 	
-	對於Advanced Version來說，N=100000 的資料亮或許太小，根據我的實作方式，我猜測時間的overhead 會是在大量memory操作。
+	* 對於Advanced Version來說，N=100000 的資料量或許太小，根據我的實作方式，我猜測時間的增加會是大量操作memory所造成的。
+	* 而Basic version可以很明顯的從圖表上看出，當process數目多一點的時候，他的執行時間會越短。
+	* 當 Basic Version 的process 數量增加到一定的程度，他的執行時間就降不下去 
+	* 兩者的執行時間會越來越接近，process數量再多一點，或許有機會反超
+
+	**N = 1000000**
+	![img](./Total_N_1000000.png)
+
 	
-* 相同Process數量，固定一個process read file，比較Node個數、資料量不同而影響的Communication Time。假設Process數量都是 12：
+	以下這個是紅線放大圖：
+	![img](./Quicksort_N_1000000.png)
+	
+	* Basic Version 的process 數量大幅影響執行時間
+	* Advanced Version 當process變成兩個執行時間變短，其他都是短幅度上升
+	* Advanced Version 執行時間遠小於Basic Version
+* Advanced Version 不同資料量，繪製出來的圖形，分別使用不同N的input testcase：
+	![img](./advanced_all.png)
+
+	
+	
+* 相同Process數量，比較Node個數、資料量不同而影響的Communication Time。假設Process數量都是 12：
 	
 	**Basic Version**
   
