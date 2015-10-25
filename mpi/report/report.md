@@ -92,10 +92,24 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 	* Advanced Version 執行時間遠小於Basic Version
 * Advanced Version 不同資料量，繪製出來的圖形，分別使用不同N的input testcase：
 	![img](./advanced_all.png)
+	
+	* 資料表示分別為：粉紅(N=84000000)，黑色(N=10000000)，紅色(N=1000000)，藍色(N=100000)
+	* 從一個process變成兩個process執行時間繪圖飛猛降
+	* Process 數目越多，執行時間不降反增
+	
+* 比較「每回合判斷所有process是否有元素交換」與「直接跑Ｎ次」。這個比較目的是，理論上前者會把不必要的case判掉，當前的狀態已經全部比較完畢，應該要比後者提早結束。但是當隨機測試資料作為input，前者是否會比後者有效率？以下是跑出來的結果（藍色的為後者，紅色的為前者）
 
+	**N = 1000000**
 	
+	![img](./basic_bcast.png)
 	
-* 相同Process數量，比較Node個數、資料量不同而影響的Communication Time。假設Process數量都是 12：
+	* 發現到，每一次都檢查到底有沒有交換，在隨機測試資料下，執行時間並不會比跑完
+	* 每一次檢查，process 之間就需要溝通，只要是溝通就會造成很大的時間延遲。
+	* 
+	
+* 相同Process數量，比較Node個數、資料量不同而影響的Communication Time。
+
+	假設Process數量都是 12
 	
 	**Basic Version**
   
