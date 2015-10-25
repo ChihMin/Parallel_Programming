@@ -5,7 +5,16 @@ if ARGV.size < 1
   exit 1
 end
 
+
+time_10 = Array.new
+i = 0 
 File.open(ARGV[0]).each_line do |line|
+  if i % 48 == 0
+  puts ""
+    puts "| nodes | ppn | num of testcase | exe. time(s)|"
+    puts "| :---: |:---: | :--------: | :-------------: |"
+  end 
+
   arr = line.split(' ')
   node = arr[0].to_i
   ppn = arr[1].to_i
@@ -14,5 +23,8 @@ File.open(ARGV[0]).each_line do |line|
   seconds = arr[3].split('m')[1].split('s')[0].to_f
 
   total = minutes * 60 + seconds
-  puts "#{node} #{ppn} #{n} #{total}" 
+  time_10.push(total)
+  puts "|#{node} | #{ppn} | #{n} | #{total} |" 
+  
+  i = i + 1
 end

@@ -1,0 +1,21 @@
+clear;
+
+[x_1, y_1] = statistic('basic_report.txt', 1, 12, 0, 12);
+[x_2, y_2] = statistic('basic_report.txt', 1, 24, 12, 12);
+[x_3, y_3] = statistic('basic_report.txt', 1, 36, 24, 12);
+[x_4, y_4] = statistic('basic_report.txt', 1, 48, 36, 12);
+
+
+d
+Y = [y_1'];
+hg = bar(Y);
+set(gca,...
+    'XTickLabel',x_1,...
+    'XTick', 1:12);
+set(hg(1), 'FaceColor','r');
+legend('basic without judge', 'basic ');
+
+
+title('Basic, N = 100000, nodes = 1', 'FontSize', 16);
+xlabel('Process per node', 'FontSize', 16); 
+ylabel('Execution time(s)', 'FontSize', 16);

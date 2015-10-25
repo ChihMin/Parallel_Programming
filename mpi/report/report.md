@@ -1,5 +1,5 @@
 # <center> Parallel Programming </center>
-###  <center> [HW1] 102062111 林致民
+###  <center> [HW1 Odd/Even Sort] 102062111 林致民
 
 ## Implementation
 
@@ -22,8 +22,6 @@ Basic 版本的規則基本上就和Spec上的一樣，實作方法如下：
 4. 終止條件我有實作兩個版本，一個是發現這回合都沒有交換，就直接結束程式。而另外一個則是跑完testcase數量結束，因為odd/even sort 最糟糕的情形是，一個元素從最右邊換到最左邊。會設計兩種實作方式的原因是，我認為一直去檢查每個process到底有沒有交換，這件事情會影響到執行效率。終止條件設立的初衷是要減少計算量，但是每一回合去通知所有process，基於MPI的Communication Overhead都會在作業系統，我並不覺得這是個有效率的做法，因此實作一個跑Ｎ回合就停止的版本來作比較。  
 
 5. 把所有的元素用搜集到同一個process，並且輸出檔案。
-
-Basic 版本我有時做一個
 
 ### Advanced
 
@@ -65,7 +63,7 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 
 ### System Environment & Time Measurement 
 
-執行程式的環境是使用課程提供的Cluster，而
+執行程式的環境是使用課程提供的Cluster，而測量時間是用linux 提供的time 指令。
 
 ### Performance mesurement
 
@@ -75,7 +73,7 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 
 	![img](./Total_N_100000.png)
 	
-	* 對於Advanced Version來說，N=100000 的資料量或許太小，根據我的實作方式，我猜測時間的增加會是大量操作memory所造成的。
+	* 對於Advanced Version來說，N=100000 的資料量或許太小，根據我的實作方式，我猜測時間的增加會是大量操作memory所造成的現象。
 	* 而Basic version可以很明顯的從圖表上看出，當process數目多一點的時候，他的執行時間會越短。
 	* 當 Basic Version 的process 數量增加到一定的程度，他的執行時間就降不下去 
 	* 兩者的執行時間會越來越接近，process數量再多一點，或許有機會反超
@@ -105,7 +103,6 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 	
 	* 發現到，每一次都檢查到底有沒有交換，在隨機測試資料下，執行時間並不會比跑完
 	* 每一次檢查，process 之間就需要溝通，只要是溝通就會造成很大的時間延遲。
-	* 
 	
 * 相同Process數量，比較Node個數、資料量不同而影響的Communication Time。
 
@@ -131,3 +128,12 @@ Advanced 的做法是採用Quicksort + Merge 的方式，實作方法如下：
 
 	或許是Infiniband 太強大，在Communication Time 看不出顯著的差距，在Advanced Version的資料量，但是其實都有個共同的現象：把process集中在某個node的執行時間都會比較少。
 
+* 以下是原始資料用圖表的方式呈現：
+
+	**Basic Version**
+![img](./N_100000_basic_all.png)
+![img](./N_1000000_basic_all.png)
+
+	**Advance Version**
+![img](./N_100000_advanced_all.png)
+![img](./N_1000000_advanced_all.png)
