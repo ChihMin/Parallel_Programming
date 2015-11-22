@@ -39,7 +39,7 @@
   Draw(x, y, Black);
 
 #define MAXN 1000010
-#define MINR 0.1
+#define MINR 0.0001
 
 using namespace std;
 
@@ -64,7 +64,7 @@ Node node[MAXN];
 int threads, T, N ;
 double mass, times;
 char *fileName;
-bool isEnable, theta;
+bool isEnable, theta, isComplete;
 double xMin, yMin;
 double length;
 int XLength;
@@ -191,6 +191,25 @@ void *thread_func(void *ID) {
   pthread_exit(NULL); 
 }
 
+void *print(void *ID) {
+  while (!isComplete) {
+    XSetForeground(display,gc,BlackPixel(display,screen));
+    XFillRectangle(display,window,gc,0,0,XLength,XLength);
+    for (int i = 0; i < N; ++i) {
+      LOCK(mutex[i]);
+      Node print = node[i];
+      UNLOCK(mutex[i]);
+      int xPix = PIXEL(print.x, xMin);
+      int yPix = PIXEL(print.y, yMin); 
+      //printf("%d -> %d %d %lf %lf\n", i, xPix, yPix, node[i].x, node[i].y);
+      Draw(xPix, yPix, White);
+    } 
+    XFlush(display);
+    usleep(1000000/10); 
+  }
+  fprintf(stderr, "printer exit\n");
+  pthread_exit(NULL);
+}
 
 int main(int argc,char *argv[]){
   toInt(threads, 1);
@@ -216,7 +235,8 @@ int main(int argc,char *argv[]){
 
   const int NUM_THREADS = threads;
   pthread_t pthreads[NUM_THREADS];
-  
+  pthread_t printer;
+    
   FILE *fin = fopen(fileName, "r");
   fscanf(fin, "%d", &N);
   for (int i = 0; i < N; ++i) {
@@ -226,36 +246,22 @@ int main(int argc,char *argv[]){
     long long int  xPix = (long long int )PIXEL(x, xMin);
     long long int yPix = (long long int)PIXEL(y, yMin); 
     // printf("START -> (%lld %lld) (%lf, %lf) %lf %lf\n", xPix, yPix, node[i].x, node[i].y,  node[i].vx, node[i].vy);   
-    // Draw(xPix, yPix, White);
+    Draw(xPix, yPix, White);
   }
   
   XFlush(display);
-  // sleep(1);  
+  sleep(1);  
   
   for (int i = 0; i < threads; ++i)
     pthread_mutex_init(&mutex[i], NULL);
   
   for (int i = 0; i < threads; ++i)
     pthread_create(&pthreads[i], NULL, thread_func, (void *)i);  
-
-  while (1) {
-    XSetForeground(display,gc,BlackPixel(display,screen));
-    XFillRectangle(display,window,gc,0,0,XLength,XLength);
-    for (int i = 0; i < N; ++i) {
-      LOCK(mutex[i]);
-      int xPix = PIXEL(node[i].x, xMin);
-      int yPix = PIXEL(node[i].y, yMin); 
-      // printf("%d -> %d %d %lf %lf\n", i, xPix, yPix, node[i].x, node[i].y);
-      UNLOCK(mutex[i]);
-
-      Draw(xPix, yPix, White);
-    } 
-    usleep(1000000/1); 
-    XFlush(display);
-  }
+  pthread_create(&printer, NULL, print, (NULL));
+  isComplete = false;
   for (int i = 0; i < threads; ++i)
     pthread_join(pthreads[i], NULL);
-     
-
+  isComplete = true;     
+  pthread_join(printer, NULL);
   return 0;
 }
