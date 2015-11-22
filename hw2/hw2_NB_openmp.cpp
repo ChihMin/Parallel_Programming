@@ -3,8 +3,9 @@
 #include <X11/Xlib.h>
 #include <unistd.h>
 #include <cmath>
-#include <pthread.h>
+#include <omp.h>
 #include <string>
+#include <pthread.h>
 
 #define toInt(params, i) params = atoi(argv[i])
 #define toDouble(params, i) \
@@ -73,6 +74,8 @@ int XLength;
 
 pthread_mutex_t mutex[MAXN];
 
+void print();
+
 inline void initGraph(int width,int height)
 {
 	/* open connection with the server */
@@ -121,36 +124,41 @@ inline void initGraph(int width,int height)
 	XFlush(display);
 }
 
-void *thread_func(void *ID) {
-  long threadID = (long)ID;
-  // fprintf(stderr, "ID = %d\n", threadID);
-  long numPerThreads = N / threads;
-  long beginIndex = numPerThreads * threadID;
-  if (threadID == threads - 1) {
-    numPerThreads += N % threads;
-  }
-  
+void thread_func() {
   int STEPS = T;
-  while (STEPS--) {
-    // printf("[%d] STEP = %d\n", threadID, STEPS); 
-    for (long i = beginIndex, j = 0; j < numPerThreads; ++i, ++j) {
+  long numPerThreads = N / threads;
+  long i, j; 
+
+while (STEPS--) {
+#pragma omp parallel num_threads(threads) \
+                      shared(node) private(i, j) 
+  {
+    #pragma omp for schedule(static) nowait 
+    for (i = 0; i < N; ++i) {
       double ax_sum = 0;
       double ay_sum = 0;
+      long threadID = omp_get_thread_num();
+      //fprintf(stderr, "ID = %d\n", threadID);
       
-      LOCK(mutex[i]);
-       Node n1 = node[i];
-      UNLOCK(mutex[i]);
+      // printf("[OUT] num of threads = %d\n", omp_get_num_threads());
+
+      Node n1 = node[i];
       //printf("BEFORE ---> ID[%d, %d] = (%lf, %lf, %lf, %lf)\n", threadID, i, node[i].x, node[i].y, node[i].vx, node[i].vy);
-      for (long j = 0; j < N; ++j) {
+      
+      // omp_set_nested(true);
+      //#pragma omp parallel num_threads(threads)
+      { 
+      
+      // printf("[IN] num of threads = %d\n", omp_get_num_threads());
+      //#pragma omp for schedule(dynamic, numPerThreads) nowait 
+      for (j = 0; j < N; ++j) {
         if (i == j) continue;
         double x1, y1;
         double x2, y2;
         double ax ,ay;
         double dx, dy;
 
-        LOCK(mutex[j]);
-          Node n2 = node[j];
-        UNLOCK(mutex[j]);
+        Node n2 = node[j];
 
         x1 = n1.x;
         y1 = n1.y;
@@ -178,42 +186,39 @@ void *thread_func(void *ID) {
         ax_sum += ax;
         ay_sum += ay; 
       }
+
+      }
       double x_next = NEXT(n1.x, n1.vx, ax_sum, times);
       double y_next = NEXT(n1.y, n1.vy, ay_sum, times);
       double Vx = V(n1.vx, ax_sum, times);
       double Vy = V(n1.vy, ay_sum, times);
       //printf("AFTER  ---> ID[%d, %d] = (%lf, %lf, %lf, %lf, %.30lf, %.30lf)\n\n", threadID, i, x_next, y_next, Vx, Vy, ax_sum, ay_sum);
-      LOCK(mutex[i]);
-        node[i] = Node(x_next, y_next, Vx, Vy);
-      UNLOCK(mutex[i]);
+      
+      node[i] = Node(x_next, y_next, Vx, Vy);
+    
     }
+
   }
-  // fprintf(stderr, "ID[%d] exit\n", threadID); 
-  pthread_exit(NULL); 
+  }
+
 }
 
 void *print(void *ID) {
   while (!isComplete) {
-    if (isEnable) {
-      XSetForeground(display,gc,BlackPixel(display,screen));
-      XFillRectangle(display,window,gc,0,0,XLength,XLength);
-    }
+    XSetForeground(display,gc,BlackPixel(display,screen));
+    XFillRectangle(display,window,gc,0,0,XLength,XLength);
     for (int i = 0; i < N; ++i) {
-      LOCK(mutex[i]);
       Node print = node[i];
-      UNLOCK(mutex[i]);
       int xPix = PIXEL(print.x, xMin);
       int yPix = PIXEL(print.y, yMin); 
-      if (isEnable) { 
-        if (xPix < 0 || xPix >= XLength) continue;
-        if (yPix < 0 || yPix >= XLength) continue;
-        Draw(xPix, yPix, White);
-      }
+      
+      if (xPix < 0 || xPix >= XLength) continue;
+      if (yPix < 0 || yPix >= XLength) continue;
+      Draw(xPix, yPix, White);
     } 
-    if (isEnable) XFlush(display);
+    XFlush(display);
     FPS(F);
   }
-  fprintf(stderr, "printer exit\n");
   pthread_exit(NULL);
 }
 
@@ -239,9 +244,6 @@ int main(int argc,char *argv[]){
     printf("BEGIN : (xmin = %lf, ymin = %lf)\n", xMin, yMin); 
   }
 
-  const int NUM_THREADS = threads;
-  pthread_t pthreads[NUM_THREADS];
-  pthread_t printer;
     
   FILE *fin = fopen(fileName, "r");
   fscanf(fin, "%d", &N);
@@ -254,21 +256,21 @@ int main(int argc,char *argv[]){
     // printf("START -> (%lld %lld) (%lf, %lf) %lf %lf\n", xPix, yPix, node[i].x, node[i].y,  node[i].vx, node[i].vy);   
     if (isEnable) { 
       Draw(xPix, yPix, White);
+      XFlush(display);
     }
   }
+  pthread_t printer;
+  if (isEnable) {
+    isComplete = 0;
+    pthread_create(&printer, NULL, print, NULL); 
+  }
   
-  // sleep(1);  
+  thread_func();
   
-  for (int i = 0; i < threads; ++i)
-    pthread_mutex_init(&mutex[i], NULL);
-  
-  for (int i = 0; i < threads; ++i)
-    pthread_create(&pthreads[i], NULL, thread_func, (void *)i);  
-  pthread_create(&printer, NULL, print, (NULL));
-  isComplete = false;
-  for (int i = 0; i < threads; ++i)
-    pthread_join(pthreads[i], NULL);
-  isComplete = true;     
-  pthread_join(printer, NULL);
+  if (isEnable) {
+    isComplete = 1;
+    pthread_join(printer, NULL);
+  }
+   
   return 0;
 }
