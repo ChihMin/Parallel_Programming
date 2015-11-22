@@ -40,6 +40,7 @@
 
 #define MAXN 1000010
 #define MINR 0.0001
+#define FPS(fps) usleep(1000000/fps)
 
 using namespace std;
 
@@ -145,7 +146,6 @@ void *thread_func(void *ID) {
         double x2, y2;
         double ax ,ay;
         double dx, dy;
-        
 
         LOCK(mutex[j]);
           Node n2 = node[j];
@@ -193,19 +193,27 @@ void *thread_func(void *ID) {
 
 void *print(void *ID) {
   while (!isComplete) {
-    XSetForeground(display,gc,BlackPixel(display,screen));
-    XFillRectangle(display,window,gc,0,0,XLength,XLength);
+    if (isEnable) {
+      XSetForeground(display,gc,BlackPixel(display,screen));
+      XFillRectangle(display,window,gc,0,0,XLength,XLength);
+    }
     for (int i = 0; i < N; ++i) {
       LOCK(mutex[i]);
       Node print = node[i];
       UNLOCK(mutex[i]);
       int xPix = PIXEL(print.x, xMin);
       int yPix = PIXEL(print.y, yMin); 
-      //printf("%d -> %d %d %lf %lf\n", i, xPix, yPix, node[i].x, node[i].y);
-      Draw(xPix, yPix, White);
+      if (isEnable) { 
+        if (xPix < 0 || xPix >= XLength) continue;
+        if (yPix < 0 || yPix >= XLength) continue;
+        Draw(xPix, yPix, White);
+      }
+      else {
+        printf("%d -> %d %d\n", i, xPix, yPix);
+      }
     } 
-    XFlush(display);
-    usleep(1000000/10); 
+    if (isEnable) XFlush(display);
+    FPS(60);
   }
   fprintf(stderr, "printer exit\n");
   pthread_exit(NULL);
@@ -246,11 +254,12 @@ int main(int argc,char *argv[]){
     long long int  xPix = (long long int )PIXEL(x, xMin);
     long long int yPix = (long long int)PIXEL(y, yMin); 
     // printf("START -> (%lld %lld) (%lf, %lf) %lf %lf\n", xPix, yPix, node[i].x, node[i].y,  node[i].vx, node[i].vy);   
-    Draw(xPix, yPix, White);
+    if (isEnable) { 
+      Draw(xPix, yPix, White);
+    }
   }
   
-  XFlush(display);
-  sleep(1);  
+  // sleep(1);  
   
   for (int i = 0; i < threads; ++i)
     pthread_mutex_init(&mutex[i], NULL);
