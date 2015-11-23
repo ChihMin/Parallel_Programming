@@ -42,10 +42,14 @@
 #define Erase(x, y) \
   Draw(x, y, Black);
 
+#define MAX(x, y) x > y ? x : y
+#define MIN(x, y) x < y ? x : y
+
+
 #define MAXN 1000010
-#define MINR 0.0001
+#define MINR 0.1
 #define FPS(fps) usleep(1000000/fps)
-#define F 20
+#define F 30
 
 using namespace std;
 
@@ -101,10 +105,10 @@ struct Tree {
   int getChildIndex(Node *node);
   void push(Node *node);
   void dispatch(); 
-  int getNum() ;
+  int getNodeNums() ;
   void calMassCenter();
-  double getAx(const Node *node);
-  double getAy(const Node *node);
+  double getLength();
+  double getDistance(const Node *curNode);
   Tree* getChild(int index);
   
   
@@ -136,28 +140,47 @@ int XLength;
 
 pthread_mutex_t mutex[MAXN];
 
-void print();
-  
+ 
 bool Tree::inRange(double x, double y,
              double beginX, double endX,
              double beginY, double endY) {
-  
-  return false;
+  if (x < beginX || x > endX) return false;
+  if (y < beginY || y > endY) return false;
+  return true;
 }
 
 void Tree::push(Node *node) {  
   nodes.push_back(node);
 }
 
+double Tree::getLength() {
+  return this->length;
+}
+
+double Tree::getDistance(const Node *curNode) {
+  double dx = curNode->x - this->x;
+  double dy = curNode->y - this->y;
+
+  if (dx < 0) dx = -dx;
+  if (dy < 0) dy = -dy;
+  
+  return R(dx, dy); 
+}
+
+int Tree::getNodeNums() {
+  return this->nodes.size();
+}
+
 int Tree::getChildIndex(Node *node) {
   double x = node->x;
   double y = node->y;
 
-  int beginX = this->startX;
-  int beginY = this->startY;
+  double beginX = this->startX;
+  double beginY = this->startY;
   
-  int x_bit = (x >= (startX + this->length / 2));
-  int y_bit = (y >= (startY + this->length / 2));
+  int x_bit = (x >= (this->startX + this->length / 2));
+  int y_bit = (y >= (this->startY + this->length / 2));
+   
   return (x_bit << 1) | (y_bit << 0); 
 }
 
@@ -180,10 +203,11 @@ void Tree::calMassCenter() {
 }
 
 void Tree::dispatch() {
-  if (nodes.size() > 1) {
-    int n = nodes.size();
+  int n = nodes.size();
+  if (n > 1) {
     for (int i = 0; i < n; ++i) {
       Node *ptr = nodes[i];
+      //printf("size = %d, x = %lf, y = %lf, beginX = %.10lf, beginY = %.10lf len = %.20lf [%d]\n", n, ptr->x, ptr->y, this->startX, this->startY, this->length, i);
       int childIndex = getChildIndex(ptr);
       if (!child[childIndex]) {
         double beginX = startX + 
@@ -198,6 +222,7 @@ void Tree::dispatch() {
           beginX, beginY, this->length / 2, this
         );
       }
+      //printf("() %d\n", childIndex);
       child[childIndex]->push(ptr);                 
     }
     
@@ -208,6 +233,29 @@ void Tree::dispatch() {
       }
     }
   }
+/*
+  else if (n > 1) {
+    for (int i = 0; i < n; ++i) {
+      int childIndex = i;
+      Node *ptr = nodes[i];
+      if (!child[childIndex]) {
+        double beginX = startX + 
+                ((childIndex & 2) > 0) * 
+                                (this->length / 2);
+        
+        double beginY = startY + 
+                ((childIndex & 1) > 0) * 
+                                (this->length / 2);
+
+        child[childIndex] = new Tree(
+          beginX, beginY, this->length / 2, this
+        );
+      }
+      // printf("second->childIndex = %d\n", childIndex);
+      child[childIndex]->push(ptr);                 
+    }
+  }
+*/
 }
 
 inline void initGraph(int width,int height)
@@ -258,13 +306,14 @@ inline void initGraph(int width,int height)
 	XFlush(display);
 }
 
-void build_tree(Tree *root = NULL) {
+void build_tree(Tree *root, int step) {
   if (root == NULL) 
     return ;
-  
+ 
+  // printf("step = %d\n" ,step);
   root->dispatch();
   for (int i = 0; i < 4; ++i)
-    build_tree(root->getChild(i)); 
+    build_tree(root->getChild(i), step+1); 
 }
 
 void traverse(Tree *root, int step) {
@@ -278,26 +327,103 @@ void traverse(Tree *root, int step) {
   }
 }
 
-void thread_func() {
+pair<double, double> getAccel(Tree *root, const Node *curNode) {
+  int nums = root->getNodeNums();  
+  double ax_sum = 0;
+  double ay_sum = 0;
+  double dx = std::abs(root->x - curNode->x);
+  double dy = std::abs(root->y - curNode->y);
+  double d = R(dx, dy);
+  double r = root->getDistance(curNode);
+  
+  if (r == 0) {
+    return pair<double, double>(0, 0);
+  }    
+  else if (nums == 1 || d/r < theta) { 
+    // let whole system be a body
+    double totalMass = (double)nums * root->mass; 
+    double ax = ax(dx, dy, totalMass);
+    double ay = ay(dx, dy, totalMass);
+     
+    ax = ax * ((root->x - curNode->x > 0) ? 1 : -1);
+    ay = ay * ((root->y - curNode->y > 0) ? 1 : -1);
+
+    return pair<double, double>(ax, ay);   
+  } 
+  
+  for(int i = 0; i < 4; ++i) {
+    if (Tree *child = root->getChild(i)) {
+      pair<double, double> ret = getAccel(child, curNode);
+      ax_sum += ret.first;
+      ay_sum += ret.second;   
+    }
+  }
+  return pair<double, double>(ax_sum, ay_sum);
+}
+
+int counter = 0;
+void thread_func(double beginX, double beginY, double len) {
   int STEPS = T;
   while (STEPS--) {
     // construct tree
-    Tree *root = new Tree(xMin, yMin, length, mass);
+    //printf("STEPS = %d %lf %lf %lf\n" ,STEPS, beginX, beginY, len);
+    
+    double beginX = 1e9, beginY = 1e9;
+    double endX = -1e9, endY = -1e9;
+    for (int i = 0; i < N; ++i) {
+      double x = node[i].x;
+      double y = node[i].y;
+      beginX = MIN(beginX, x);
+      beginY = MIN(beginY, y);
+
+      endX = MAX(endX, x);
+      endY = MAX(endY, y);
+    }
+    
+    Tree *root = new Tree(beginX, beginY, 
+                      MAX(endX - beginX, endY - beginY), mass);
+    //Tree *root = new Tree(beginX, beginY, length, mass);
     for (int i = 0; i < N; ++i)
       root->push(&node[i]);
-    build_tree(root);
-     
+    build_tree(root, 0);
+    
+    int chunk = N / threads; 
     #pragma omp parallel num_threads(threads)
     {
       #pragma omp for schedule(static) nowait
       for (int i = 0; i < N; ++i){
+        //printf("i = %d, thread = %d\n", i, omp_get_thread_num()); 
         Node curNode = node[i];
-        // double ax = root->getAx(&curNode);
-        // double ay = root->getAy(&curNode);
         
-          
+        pair<double, double> accel = 
+                    getAccel(root, &curNode);
+        
+        double ax = accel.first;
+        double ay = accel.second;
+
+        double vx_next = V(curNode.vx, ax, times);
+        double vy_next = V(curNode.vy, ay, times);
+
+        //double x_next = curNode.x + vx_next * times;
+        //double y_next = curNode.y + vy_next * times;
+        double x_next = NEXT(curNode.x, curNode.vx, ax, times);
+        double y_next = NEXT(curNode.y, curNode.vy, ay, times);
+       /* 
+        node[i].x = x_next;
+        node[i].y = y_next;
+        node[i].vx = vx_next;
+        node[i].vy = vy_next;
+       */ 
+        node[i] = Node(x_next, y_next, vx_next, vy_next); 
       }
+
+      #pragma omp barrier
+      //sleep(2);
+      //printf("Hello, %d\n", omp_get_thread_num());
+      // printf("STEPS = %d\n" ,STEPS);
+      //printf("counter = %d\n", counter++);
     }
+    // print(); 
     // release root 
     delete root;
   }
@@ -345,10 +471,19 @@ int main(int argc,char *argv[]){
   }
 
     
+  double beginX = 1e9, beginY = 1e9;
+  double endX = -1e9, endY = -1e9;
+
   FILE *fin = fopen(fileName, "r");
   fscanf(fin, "%d", &N);
   for (int i = 0; i < N; ++i) {
     double x, y, vx, vy;
+    beginX = MIN(beginX, x);
+    beginY = MIN(beginY, y);
+
+    endX = MAX(endX, x);
+    endY = MAX(endY, y);
+
     fscanf(fin, "%lf %lf %lf %lf", &x, &y, &vx, &vy);
     node[i] = Node(x, y, vx, vy);
     long long int  xPix = (long long int )PIXEL(x, xMin);
@@ -367,7 +502,7 @@ int main(int argc,char *argv[]){
   }
   
   printf("Begin thread function \n");
-  thread_func();
+  thread_func(beginX, beginY, MAX(endX - beginX, endY - beginY));
   printf("End thread function \n");
   
   if (isEnable) {
