@@ -198,7 +198,6 @@ void Tree::calMassCenter() {
     y_sum += nodes[i]->y;
   }
   
-  //printf("%lf %lf\n", this->mass, totalMass);
   this->x = x_sum * this->mass / totalMass;
   this->y = y_sum * this->mass / totalMass;
 }
@@ -391,6 +390,7 @@ void thread_func(double beginX, double beginY, double len) {
     root->startY = beginY;
     root->length = MAX(endX - beginX, endY - beginY);
     root->mass = mass;
+    root->calMassCenter();
      
     //Tree *root = new Tree(beginX, beginY, 
     //                  MAX(endX - beginX, endY - beginY), mass);
@@ -402,7 +402,8 @@ void thread_func(double beginX, double beginY, double len) {
     build_tree(root, 0);
     
     int chunk = N / threads; 
-    #pragma omp parallel num_threads(threads)
+    int i;
+    #pragma omp parallel num_threads(threads) shared(node, root) private(i)
     {
       #pragma omp for schedule(dynamic, chunk) nowait
       for (int i = 0; i < N; ++i){
@@ -422,6 +423,8 @@ void thread_func(double beginX, double beginY, double len) {
         //double y_next = curNode.y + vy_next * times;
         double x_next = NEXT(curNode.x, curNode.vx, ax, times);
         double y_next = NEXT(curNode.y, curNode.vy, ay, times);
+
+        //printf("[%d] ax = %.20lf, ay = %.20lf\n", i, ax, ay);
        /* 
         node[i].x = x_next;
         node[i].y = y_next;
