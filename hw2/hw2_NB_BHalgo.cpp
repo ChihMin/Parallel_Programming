@@ -197,7 +197,8 @@ void Tree::calMassCenter() {
     x_sum += nodes[i]->x;
     y_sum += nodes[i]->y;
   }
-
+  
+  //printf("%lf %lf\n", this->mass, totalMass);
   this->x = x_sum * this->mass / totalMass;
   this->y = y_sum * this->mass / totalMass;
 }
@@ -333,15 +334,17 @@ pair<double, double> getAccel(Tree *root, const Node *curNode) {
   double ay_sum = 0;
   double dx = std::abs(root->x - curNode->x);
   double dy = std::abs(root->y - curNode->y);
-  double d = R(dx, dy);
+  double d = root->length;
   double r = root->getDistance(curNode);
   
-  if (r == 0) {
+  if (r <= MINR) {
     return pair<double, double>(0, 0);
   }    
   else if (nums == 1 || d/r < theta) { 
     // let whole system be a body
-    double totalMass = (double)nums * root->mass; 
+    // double totalMass = (double)nums * root->mass; 
+    
+    double totalMass = root->mass; 
     double ax = ax(dx, dy, totalMass);
     double ay = ay(dx, dy, totalMass);
      
@@ -370,6 +373,8 @@ void thread_func(double beginX, double beginY, double len) {
     
     double beginX = 1e9, beginY = 1e9;
     double endX = -1e9, endY = -1e9;
+    Tree *root = new Tree();
+    
     for (int i = 0; i < N; ++i) {
       double x = node[i].x;
       double y = node[i].y;
@@ -378,19 +383,28 @@ void thread_func(double beginX, double beginY, double len) {
 
       endX = MAX(endX, x);
       endY = MAX(endY, y);
+      
+      root->push(&node[i]);
     }
     
-    Tree *root = new Tree(beginX, beginY, 
-                      MAX(endX - beginX, endY - beginY), mass);
+    root->startX = beginX;
+    root->startY = beginY;
+    root->length = MAX(endX - beginX, endY - beginY);
+    root->mass = mass;
+     
+    //Tree *root = new Tree(beginX, beginY, 
+    //                  MAX(endX - beginX, endY - beginY), mass);
     //Tree *root = new Tree(beginX, beginY, length, mass);
+  /*
     for (int i = 0; i < N; ++i)
       root->push(&node[i]);
+  */ 
     build_tree(root, 0);
     
     int chunk = N / threads; 
     #pragma omp parallel num_threads(threads)
     {
-      #pragma omp for schedule(static) nowait
+      #pragma omp for schedule(dynamic, chunk) nowait
       for (int i = 0; i < N; ++i){
         //printf("i = %d, thread = %d\n", i, omp_get_thread_num()); 
         Node curNode = node[i];
