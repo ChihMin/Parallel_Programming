@@ -6,6 +6,9 @@
 #include <omp.h>
 #include <string>
 #include <pthread.h>
+#include <vector>
+#include <cstring>
+
 
 #define toInt(params, i) params = atoi(argv[i])
 #define toDouble(params, i) \
@@ -55,6 +58,8 @@ struct Node {
   }
 };
 
+int BigCounter = 0;
+
 struct Tree {
   vector <Node*> nodes;
   Tree* child[4];
@@ -65,21 +70,31 @@ struct Tree {
   double x, y;
   double mass;
  
-  
   Tree() { 
-    memset(child, NULL, sizeof(child));  
+    memset(child, 0, sizeof(child));  
     parent = NULL;
   }
   
-  Tree(int _startX, int _startY, 
-             int _length, Tree *_parent) {
-    memset(child, 
+  Tree(double _startX, double _startY, 
+             double _length, Tree *_parent) {
+    memset(child, 0, sizeof(child)); 
     startX = _startX;
     startY = _startY;
     length = _length;
     parent = _parent;
+    mass = parent->mass;
   }
-   
+  
+  Tree(double _startX, double _startY, 
+             double _length, double _mass) {
+    memset(child, 0, sizeof(child)); 
+    startX = _startX;
+    startY = _startY;
+    length = _length;
+    parent = NULL;
+    mass = _mass;
+  }
+  
   bool inRange(double x, double y,
                double beginX, double endX,
                double beginY, double endY); 
@@ -88,7 +103,18 @@ struct Tree {
   void dispatch(); 
   int getNum() ;
   void calMassCenter();
+  double getAx(const Node *node);
+  double getAy(const Node *node);
   Tree* getChild(int index);
+  
+  
+  ~Tree() {   
+    nodes.clear();
+    for (int i = 0; i < 4; ++i) { 
+      if (child[i])
+        delete child[i];
+    }
+  }
 };
 
 const double PI = 3.14159;
@@ -130,8 +156,8 @@ int Tree::getChildIndex(Node *node) {
   int beginX = this->startX;
   int beginY = this->startY;
   
-  int x_bit = (x >= (startX + length / 2));
-  int y_bit = (y >= (startY + length / 2));
+  int x_bit = (x >= (startX + this->length / 2));
+  int y_bit = (y >= (startY + this->length / 2));
   return (x_bit << 1) | (y_bit << 0); 
 }
 
@@ -146,7 +172,7 @@ void Tree::calMassCenter() {
   double x_sum = 0, y_sum = 0;
   for (int i = 0; i < n; ++i) {
     x_sum += nodes[i]->x;
-    y_sum += nodex[i]->y;
+    y_sum += nodes[i]->y;
   }
 
   this->x = x_sum * this->mass / totalMass;
@@ -157,12 +183,20 @@ void Tree::dispatch() {
   if (nodes.size() > 1) {
     int n = nodes.size();
     for (int i = 0; i < n; ++i) {
-      Node *ptr = node[i];
+      Node *ptr = nodes[i];
       int childIndex = getChildIndex(ptr);
       if (!child[childIndex]) {
-        double beginX = startX + ((childIndex & 2) > 0)*(length / 2);
-        double beginY = startY + ((childIndex & 1) > 0)*(length / 2);
-        child[childIndex] = new Tree(beginX, beginY, length / 2, this);
+        double beginX = startX + 
+                ((childIndex & 2) > 0) * 
+                                (this->length / 2);
+        
+        double beginY = startY + 
+                ((childIndex & 1) > 0) * 
+                                (this->length / 2);
+
+        child[childIndex] = new Tree(
+          beginX, beginY, this->length / 2, this
+        );
       }
       child[childIndex]->push(ptr);                 
     }
@@ -224,12 +258,48 @@ inline void initGraph(int width,int height)
 	XFlush(display);
 }
 
+void build_tree(Tree *root = NULL) {
+  if (root == NULL) 
+    return ;
+  
+  root->dispatch();
+  for (int i = 0; i < 4; ++i)
+    build_tree(root->getChild(i)); 
+}
+
+void traverse(Tree *root, int step) {
+  if (root == NULL)
+    return ;
+  
+  for (int i = 0; i < 4; ++i) {
+    if (root->child[i]) {
+      traverse(root->child[i], step + 1);
+    }
+  }
+}
+
 void thread_func() {
   int STEPS = T;
   while (STEPS--) {
     // construct tree
-    
-    
+    Tree *root = new Tree(xMin, yMin, length, mass);
+    for (int i = 0; i < N; ++i)
+      root->push(&node[i]);
+    build_tree(root);
+     
+    #pragma omp parallel num_threads(threads)
+    {
+      #pragma omp for schedule(static) nowait
+      for (int i = 0; i < N; ++i){
+        Node curNode = node[i];
+        // double ax = root->getAx(&curNode);
+        // double ay = root->getAy(&curNode);
+        
+          
+      }
+    }
+    // release root 
+    delete root;
   }
 }
 
@@ -289,13 +359,16 @@ int main(int argc,char *argv[]){
       XFlush(display);
     }
   }
+
   pthread_t printer;
   if (isEnable) {
     isComplete = 0;
     pthread_create(&printer, NULL, print, NULL); 
   }
   
+  printf("Begin thread function \n");
   thread_func();
+  printf("End thread function \n");
   
   if (isEnable) {
     isComplete = 1;
