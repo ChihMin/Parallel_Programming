@@ -51,7 +51,7 @@
 #define MAXN 1000010
 #define MINR 0.00000000001
 #define FPS(fps) usleep(1000000/fps)
-#define F 20
+#define F 30
 
 using namespace std;
 
@@ -287,7 +287,7 @@ inline void initGraph(int width,int height)
 	XFlush(display);
 }
 inline void printGrid(Tree *root, int step) {
-  if (root == NULL || step == 6) return ;
+  if (root == NULL) return ;
   if (EnableGrid) { 
     int xPixel = PIXEL(root->startX, xMin);
     int yPixel = PIXEL(root->startY, yMin);
@@ -379,6 +379,9 @@ inline void thread_func(double beginX, double beginY, double len) {
     
     double beginX = 1e9, beginY = 1e9;
     double endX = -1e9, endY = -1e9;
+
+    LOCK(printMutex);
+
     root = new Tree();
     
     for (int i = 0; i < N; ++i) {
@@ -398,6 +401,7 @@ inline void thread_func(double beginX, double beginY, double len) {
     root->length = MAX(endX - beginX, endY - beginY);
     root->mass = mass;
     root->calMassCenter();
+  
     
    /* 
     root->dispatch(); 
@@ -414,6 +418,8 @@ inline void thread_func(double beginX, double beginY, double len) {
     }
   */
     build_tree(root, 0);
+
+    UNLOCK(printMutex);
     // XFlush(display);
     // sleep(5);
 
@@ -448,16 +454,26 @@ inline void thread_func(double beginX, double beginY, double len) {
       }
     }
     // if (isEnable) print(); 
-    // release root 
+    // release root
+    
+    LOCK(printMutex); 
     delete root;
     root = NULL;
+    UNLOCK(printMutex);
   }
 }
 
-void *print(void *ID) {
+inline void *print(void *ID) {
   while (!isComplete) {
     XSetForeground(display,gc,BlackPixel(display,screen));
     XFillRectangle(display,window,gc,0,0,XLength,XLength);
+    
+    if (EnableGrid) {
+      LOCK(printMutex);
+        printGrid(root, 0);
+      UNLOCK(printMutex); 
+    }
+    
     for (int i = 0; i < N; ++i) {
       Node print = node[i];
       int xPix = PIXEL(print.x, xMin);
@@ -519,7 +535,8 @@ int main(int argc,char *argv[]){
       XFlush(display);
     }
   }
-
+    
+  pthread_mutex_init(&printMutex, NULL);
   pthread_t printer;
   if (isEnable) {
     isComplete = 0;
