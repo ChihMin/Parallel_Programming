@@ -39,7 +39,7 @@
   Draw(x, y, Black);
 
 #define MAXN 1000010
-#define MINR 0.0001
+#define MINR 0.01
 #define FPS(fps) usleep(1000000/fps)
 #define F 20
 

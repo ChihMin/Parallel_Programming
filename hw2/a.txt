@@ -1,1 +1,0 @@
-clang++ -Wno-int-to-void-pointer-cast -Wno-format -lpthread -lX11 hw2_NB_pthread.cpp -o ./hw2_NB_pthread -lpthread
