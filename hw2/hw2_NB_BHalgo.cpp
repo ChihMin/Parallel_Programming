@@ -20,6 +20,8 @@
 #define LOCK(mutex) pthread_mutex_lock(&mutex)
 #define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 
+#define EnableGrid 0
+
 #define G (6.67384*pow(10, -11))
 #define powOfR(dx, dy) (pow(dx, 2)+pow(dy, 2))
 #define R(dx, dy) sqrt(powOfR(dx, dy)) 
@@ -47,9 +49,9 @@
 
 
 #define MAXN 1000010
-#define MINR 0.1
+#define MINR 0.00000000001
 #define FPS(fps) usleep(1000000/fps)
-#define F 30
+#define F 10
 
 using namespace std;
 
@@ -133,7 +135,8 @@ Node node[MAXN];
 int threads, T, N ;
 double mass, times;
 char *fileName;
-bool isEnable, theta, isComplete;
+bool isEnable, isComplete;
+double theta;
 double xMin, yMin;
 double length;
 int XLength;
@@ -233,29 +236,6 @@ void Tree::dispatch() {
       }
     }
   }
-/*
-  else if (n > 1) {
-    for (int i = 0; i < n; ++i) {
-      int childIndex = i;
-      Node *ptr = nodes[i];
-      if (!child[childIndex]) {
-        double beginX = startX + 
-                ((childIndex & 2) > 0) * 
-                                (this->length / 2);
-        
-        double beginY = startY + 
-                ((childIndex & 1) > 0) * 
-                                (this->length / 2);
-
-        child[childIndex] = new Tree(
-          beginX, beginY, this->length / 2, this
-        );
-      }
-      // printf("second->childIndex = %d\n", childIndex);
-      child[childIndex]->push(ptr);                 
-    }
-  }
-*/
 }
 
 inline void initGraph(int width,int height)
@@ -306,25 +286,37 @@ inline void initGraph(int width,int height)
 	XFlush(display);
 }
 
+inline void print() {
+    for (int i = 0; i < N; ++i) {
+      int xPix = PIXEL(node[i].x, xMin);
+      int yPix = PIXEL(node[i].y, yMin); 
+      
+      if (xPix < 0 || xPix >= XLength) continue;
+      if (yPix < 0 || yPix >= XLength) continue;
+      Draw(xPix, yPix, White);
+    } 
+    XFlush(display);
+    //FPS(100);
+}
+
 void build_tree(Tree *root, int step) {
   if (root == NULL) 
     return ;
  
   // printf("step = %d\n" ,step);
+  //XDrawRectangle(root->startX, root->startY, root->length, root->length, White); 
+  
+ 
+  if (EnableGrid) { 
+    int xPixel = PIXEL(root->startX, xMin);
+    int yPixel = PIXEL(root->startY, yMin);
+    int lenPixel = XLength * (root->length / length); 
+    XSetForeground(display, gc, WhitePixel(display, screen));  // Tell the GC we draw using the RED color
+    XDrawRectangle(display, window, gc, xPixel, yPixel, lenPixel, lenPixel);      // Draw the rectangle
+  }
   root->dispatch();
   for (int i = 0; i < 4; ++i)
     build_tree(root->getChild(i), step+1); 
-}
-
-void traverse(Tree *root, int step) {
-  if (root == NULL)
-    return ;
-  
-  for (int i = 0; i < 4; ++i) {
-    if (root->child[i]) {
-      traverse(root->child[i], step + 1);
-    }
-  }
 }
 
 pair<double, double> getAccel(Tree *root, const Node *curNode) {
@@ -334,16 +326,27 @@ pair<double, double> getAccel(Tree *root, const Node *curNode) {
   double dx = std::abs(root->x - curNode->x);
   double dy = std::abs(root->y - curNode->y);
   double d = root->length;
-  double r = root->getDistance(curNode);
+  double r = R(dx, dy);
   
   if (r <= MINR) {
     return pair<double, double>(0, 0);
-  }    
+  }
+  else if (d/r > theta) {
+    //printf("theta = %lf, d/r = %lf\n", theta, d/r);
+    for(int i = 0; i < 4; ++i) {
+      if (Tree *child = root->getChild(i)) {
+        pair<double, double> ret = getAccel(child, curNode);
+        ax_sum += ret.first;
+        ay_sum += ret.second;   
+      }
+    }
+  }
   else if (nums == 1 || d/r < theta) { 
     // let whole system be a body
     // double totalMass = (double)nums * root->mass; 
     
-    double totalMass = root->mass; 
+    double totalMass = root->mass * (double)nums;
+    //printf("%lf %lf %lf\n", root->mass, totalMass, (double)nums); 
     double ax = ax(dx, dy, totalMass);
     double ay = ay(dx, dy, totalMass);
      
@@ -353,13 +356,6 @@ pair<double, double> getAccel(Tree *root, const Node *curNode) {
     return pair<double, double>(ax, ay);   
   } 
   
-  for(int i = 0; i < 4; ++i) {
-    if (Tree *child = root->getChild(i)) {
-      pair<double, double> ret = getAccel(child, curNode);
-      ax_sum += ret.first;
-      ay_sum += ret.second;   
-    }
-  }
   return pair<double, double>(ax_sum, ay_sum);
 }
 
@@ -391,16 +387,15 @@ void thread_func(double beginX, double beginY, double len) {
     root->length = MAX(endX - beginX, endY - beginY);
     root->mass = mass;
     root->calMassCenter();
-     
-    //Tree *root = new Tree(beginX, beginY, 
-    //                  MAX(endX - beginX, endY - beginY), mass);
-    //Tree *root = new Tree(beginX, beginY, length, mass);
-  /*
-    for (int i = 0; i < N; ++i)
-      root->push(&node[i]);
-  */ 
-    build_tree(root, 0);
     
+    if(isEnable) { 
+      XSetForeground(display,gc,BlackPixel(display,screen));
+      XFillRectangle(display,window,gc,0,0,XLength,XLength);
+    }
+    build_tree(root, 0);
+    // XFlush(display);
+    // sleep(5);
+
     int chunk = N / threads; 
     int i;
     #pragma omp parallel num_threads(threads) shared(node, root) private(i)
@@ -431,16 +426,16 @@ void thread_func(double beginX, double beginY, double len) {
         node[i].vx = vx_next;
         node[i].vy = vy_next;
        */ 
-        node[i] = Node(x_next, y_next, vx_next, vy_next); 
+        node[i] = Node(x_next, y_next, vx_next, vy_next);
       }
-
+      
       #pragma omp barrier
       //sleep(2);
       //printf("Hello, %d\n", omp_get_thread_num());
       // printf("STEPS = %d\n" ,STEPS);
       //printf("counter = %d\n", counter++);
     }
-    // print(); 
+    if (isEnable) print(); 
     // release root 
     delete root;
   }
@@ -515,7 +510,7 @@ int main(int argc,char *argv[]){
   pthread_t printer;
   if (isEnable) {
     isComplete = 0;
-    pthread_create(&printer, NULL, print, NULL); 
+  //  pthread_create(&printer, NULL, print, NULL); 
   }
   
   printf("Begin thread function \n");
@@ -524,7 +519,7 @@ int main(int argc,char *argv[]){
   
   if (isEnable) {
     isComplete = 1;
-    pthread_join(printer, NULL);
+  //  pthread_join(printer, NULL);
   }
    
   return 0;
