@@ -132,6 +132,8 @@ int screen;         //which screen
 
 Node node[MAXN];
 
+double buildTime = 0, computeTime = 0, IOTime = 0;
+double timeBegin, timeEnd; 
 int threads, T, N ;
 double mass, times;
 char *fileName;
@@ -323,7 +325,7 @@ inline void build_tree(Tree *root, int step) {
   // printf("step = %d\n" ,step);
   //XDrawRectangle(root->startX, root->startY, root->length, root->length, White); 
   
- 
+   
   root->dispatch();
   for (int i = 0; i < 4; ++i)
     build_tree(root->getChild(i), step+1); 
@@ -401,23 +403,12 @@ inline void thread_func(double beginX, double beginY, double len) {
     root->length = MAX(endX - beginX, endY - beginY);
     root->mass = mass;
     root->calMassCenter();
-  
     
-   /* 
-    root->dispatch(); 
-    #pragma omp parallel num_threads(4)
-    {
-      #pragma omp for schedule(static) nowait
-      for (int i = 0; i < 4; ++i) {
-        if (root->child[i]) {
-          build_tree(root->child[i], 0);
-        }
-      }
-      
-      #pragma omp barrier 
-    }
-  */
+    
+    timeBegin = omp_get_wtime();
     build_tree(root, 0);
+    timeEnd = omp_get_wtime();
+    buildTime += timeEnd - timeBegin;
 
     UNLOCK(printMutex);
     // XFlush(display);
@@ -425,6 +416,8 @@ inline void thread_func(double beginX, double beginY, double len) {
 
     int chunk = N / threads; 
     int i;
+
+    timeBegin = omp_get_wtime();
     #pragma omp parallel num_threads(threads) 
     {
       #pragma omp for schedule(static) nowait
@@ -455,7 +448,9 @@ inline void thread_func(double beginX, double beginY, double len) {
     }
     // if (isEnable) print(); 
     // release root
-    
+    timeEnd = omp_get_wtime();
+    computeTime += timeEnd - timeBegin;
+
     LOCK(printMutex); 
     delete root;
     root = NULL;
@@ -511,9 +506,10 @@ int main(int argc,char *argv[]){
     printf("BEGIN : (xmin = %lf, ymin = %lf)\n", xMin, yMin); 
   }
 
-    
   double beginX = 1e9, beginY = 1e9;
   double endX = -1e9, endY = -1e9;
+
+  timeBegin = omp_get_wtime();
 
   FILE *fin = fopen(fileName, "r");
   fscanf(fin, "%d", &N);
@@ -535,6 +531,9 @@ int main(int argc,char *argv[]){
       XFlush(display);
     }
   }
+
+  timeEnd = omp_get_wtime();
+  
     
   pthread_mutex_init(&printMutex, NULL);
   pthread_t printer;
@@ -551,6 +550,9 @@ int main(int argc,char *argv[]){
     isComplete = 1;
     pthread_join(printer, NULL);
   }
+  fprintf(stderr, "IO_Time = %.5lf\n", timeEnd - timeBegin);
+  fprintf(stderr, "Build_Time = %.5lf\n", buildTime);
+  fprintf(stderr, "Compute_Time = %.5lf\n", computeTime);
    
   return 0;
 }
