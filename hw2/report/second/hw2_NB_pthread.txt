@@ -1,0 +1,8 @@
+hw2_NB_pthread 1 0.175
+hw2_NB_pthread 101 11.976
+hw2_NB_pthread 201 23.527
+hw2_NB_pthread 301 35.249
+hw2_NB_pthread 401 48.855
+hw2_NB_pthread 501 58.703
+hw2_NB_pthread 601 70.609
+hw2_NB_pthread 701 81.547

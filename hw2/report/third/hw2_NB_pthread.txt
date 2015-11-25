@@ -1,0 +1,4 @@
+hw2_NB_pthread test1.txt 0.053
+hw2_NB_pthread test2.txt 6.519
+hw2_NB_pthread test3.txt 191.683
+hw2_NB_pthread test4.txt 268.094

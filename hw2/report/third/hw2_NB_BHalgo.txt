@@ -1,0 +1,4 @@
+hw2_NB_BHalgo test1.txt 0.002
+hw2_NB_BHalgo test2.txt 4.079
+hw2_NB_BHalgo test3.txt 64.635
+hw2_NB_BHalgo test4.txt 74.936
