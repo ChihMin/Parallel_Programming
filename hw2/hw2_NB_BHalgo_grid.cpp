@@ -20,7 +20,7 @@
 #define LOCK(mutex) pthread_mutex_lock(&mutex)
 #define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 
-#define EnableGrid 0
+#define EnableGrid 1
 
 #define G (6.67384*pow(10, -11))
 #define powOfR(dx, dy) (pow(dx, 2)+pow(dy, 2))
