@@ -1,0 +1,8 @@
+hw2_NB_openmp 1 0.177
+hw2_NB_openmp 101 6.58
+hw2_NB_openmp 201 12.803
+hw2_NB_openmp 301 19.17
+hw2_NB_openmp 401 25.513
+hw2_NB_openmp 501 31.842
+hw2_NB_openmp 601 38.139
+hw2_NB_openmp 701 44.612

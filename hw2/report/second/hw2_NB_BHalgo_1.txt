@@ -1,0 +1,8 @@
+hw2_NB_BHalgo_1 1 0.073
+hw2_NB_BHalgo_1 101 0.831
+hw2_NB_BHalgo_1 201 1.689
+hw2_NB_BHalgo_1 301 2.507
+hw2_NB_BHalgo_1 401 3.477
+hw2_NB_BHalgo_1 501 4.567
+hw2_NB_BHalgo_1 601 6.165
+hw2_NB_BHalgo_1 701 7.137
