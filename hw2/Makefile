@@ -11,7 +11,8 @@ NB_pthread: NAME = hw2_NB_pthread
 NB_openmp: NAME = hw2_NB_openmp
 NB_openmp: CC = g++
 NB_BHalgo: NAME = hw2_NB_BHalgo
-NB_BHalgo_grid: NAME = hw2_NB_BHalgo_grid
+NB_BHalgo_no_grid: MPFLAGS += -DEnableGrid=0
+NB_BHalgo_no_grid: NB_BHalgo
 debug: MPFLAGS += -g
 debug: NAME = NB_BHalgo
 debug: NB_BHalgo
