@@ -102,21 +102,38 @@ int read_bmp (const char *fname_s) {
 	//         if (err != CUDA_SUCCESS)
     int totalSize = width * height * byte_per_pixel;
     totalSize = totalSize < 0 ? -totalSize : totalSize;
-	image_s = (unsigned char *) malloc((size_t)totalSize);
-	if (image_s == NULL) {
+	//image_s = (unsigned char *) malloc((size_t)totalSize);
+    
+    cudaError_t err = cudaMallocHost(&image_s, (size_t)totalSize);
+       cudaCheckErrors("cuda_malloc_images_s error"); 
+/* 
+    if (err != CUDA_SUCCESS) {
+       cudaCheckErrors("cuda_malloc_images_s error"); 
+    }
+*/
+/*
+    if (image_s == NULL) {
 		printf("malloc images_s errori, %d\n", totalSize);
 		return -1;
 	}
-
+*/
 	// Task 3: Assign image_t to Pinned Memory
 	// Hint  : err = cudaMallocHost ( ... )
 	//         if (err != CUDA_SUCCESS)
-	image_t = (unsigned char *) malloc(totalSize);
-	if (image_t == NULL) {
+	//image_t = (unsigned char *) malloc(totalSize);
+    err = cudaMallocHost(&image_t, (size_t)totalSize);
+    cudaCheckErrors("cuda_malloc_images_t error"); 
+/*
+    if (err != CUDA_SUCCESS) {
+       cudaCheckErrors("cuda_malloc_images_t error"); 
+    }
+*/
+/*	
+    if (image_t == NULL) {
 		printf("malloc image_t error %d\n", totalSize);
 		return -1;
 	}
-
+*/
 	fread(image_s, sizeof(unsigned char), (size_t)(long) totalSize, fp_s);
 
 	return 0;
@@ -395,6 +412,6 @@ main(int argc, char **argv) {
 
 	// Task 3: Free Pinned memory
 	// Hint  : replace free ( ... ) by cudaFreeHost ( ... )
-	free (image_s);
-	free (image_t);
+	cudaFreeHost(image_s);
+	cudaFreeHost(image_t);
 }
