@@ -20,7 +20,7 @@
 #define LOCK(mutex) pthread_mutex_lock(&mutex)
 #define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 
-#define EnableGrid 0
+#define EnableGrid 1
 
 #define G (6.67384*pow(10, -11))
 #define powOfR(dx, dy) (pow(dx, 2)+pow(dy, 2))
@@ -144,6 +144,13 @@ Tree *root = NULL;
 
 pthread_mutex_t mutex[MAXN];
 pthread_mutex_t printMutex; 
+pthread_mutex_t threadMutex[60];
+
+pthread_cond_t threadCond[60];
+pthread_cond_t rootCond;
+
+pthread_barrier_t beginWaitBarrier;
+pthread_barrier_t endWaitBarrier;
  
 inline bool Tree::inRange(double x, double y,
              double beginX, double endX,
@@ -370,54 +377,21 @@ inline pair<double, double> getAccel(Tree *root, const Node *curNode) {
   return pair<double, double>(ax_sum, ay_sum);
 }
 
-int counter = 0;
-inline void thread_func(double beginX, double beginY, double len) {
-  int STEPS = T;
-  while (STEPS--) {
-    // construct tree
-    //printf("STEPS = %d %lf %lf %lf\n" ,STEPS, beginX, beginY, len);
-    
-    double beginX = 1e9, beginY = 1e9;
-    double endX = -1e9, endY = -1e9;
-
-    LOCK(printMutex);
-
-    root = new Tree();
-    
-    for (int i = 0; i < N; ++i) {
-      double x = node[i].x;
-      double y = node[i].y;
-      beginX = MIN(beginX, x);
-      beginY = MIN(beginY, y);
-
-      endX = MAX(endX, x);
-      endY = MAX(endY, y);
-      
-      root->push(&node[i]);
-    }
-    
-    root->startX = beginX;
-    root->startY = beginY;
-    root->length = MAX(endX - beginX, endY - beginY);
-    root->mass = mass;
-    root->calMassCenter();
+inline void *runOnBody(void *ID) {
+  int STEPS = T; 
+  long threadID = (long)ID;
+  long numPerThreads = N / threads;
+  long beginNumber = threadID * numPerThreads;
+  if (threadID == threads - 1)
+    numPerThreads += N % threads;
   
-    build_tree(root, 0);
-
-    UNLOCK(printMutex);
-    // XFlush(display);
-    // sleep(5);
-
-    int chunk = N / threads; 
-    int i;
-    #pragma omp parallel num_threads(threads) 
-    {
-      #pragma omp for schedule(static) nowait
-      for (int i = 0; i < N; ++i){
-        //printf("i = %d, thread = %d\n", i, omp_get_thread_num()); 
-        //LOCK(mutex[i]);
-        Node curNode = node[i];
-        //UNLOCK(mutex[i]);
+  //pthread_cond_wait(&rootCond, &threadMutex[threadID]);
+  while (STEPS--) {
+    pthread_barrier_wait(&beginWaitBarrier);
+    for (long long int i = beginNumber, j = 0; j < numPerThreads; ++i, ++j) {
+        LOCK(mutex[i]);
+         Node curNode = node[i];
+        UNLOCK(mutex[i]);
 
         pair<double, double> accel = 
                     getAccel(root, &curNode);
@@ -430,25 +404,65 @@ inline void thread_func(double beginX, double beginY, double len) {
 
         double x_next = curNode.x + vx_next * times;
         double y_next = curNode.y + vy_next * times;
-        //double x_next = NEXT(curNode.x, curNode.vx, ax, times);
-        //double y_next = NEXT(curNode.y, curNode.vy, ay, times);
         
-        //LOCK(mutex[i]);
-        node[i].x = x_next;
-        node[i].y = y_next;
-        node[i].vx = vx_next;
-        node[i].vy = vy_next;
-        //UNLOCK(mutex[i]);
-       // printf("[%d], thread:%d, x:%lf, y:%lf, vx:%lf, vy:%lf", i, omp_get_thread_num(), x_next, y_next, vx_next, vy_next);
-      }
+        LOCK(mutex[i]);
+          node[i].x = x_next;
+          node[i].y = y_next;
+          node[i].vx = vx_next;
+          node[i].vy = vy_next;
+        UNLOCK(mutex[i]);
     }
-    // if (isEnable) print(); 
-    // release root
+    pthread_barrier_wait(&endWaitBarrier);
+  }
+  pthread_exit(NULL);
+}
+
+int counter = 0;
+inline void thread_func(double beginX, double beginY, double len) {
+  int STEPS = T;
+  while (STEPS--) {
+    // construct tree
+    //printf("STEPS = %d %lf %lf %lf\n" ,STEPS, beginX, beginY, len);
     
-    LOCK(printMutex); 
-    delete root;
-    root = NULL;
+    double beginX = 1e9, beginY = 1e9;
+    double endX = -1e9, endY = -1e9;
+
+    LOCK(printMutex);
+      root = new Tree();
+      for (int i = 0; i < N; ++i) {
+        double x = node[i].x;
+        double y = node[i].y;
+        beginX = MIN(beginX, x);
+        beginY = MIN(beginY, y);
+
+        endX = MAX(endX, x);
+        endY = MAX(endY, y);
+        
+        root->push(&node[i]);
+      }
+      
+      root->startX = beginX;
+      root->startY = beginY;
+      root->length = MAX(endX - beginX, endY - beginY);
+      root->mass = mass;
+      root->calMassCenter();
+    
+      build_tree(root, 0);
     UNLOCK(printMutex);
+    
+    //sleep(5); 
+    pthread_barrier_wait(&beginWaitBarrier);
+/*
+    pthread_cond_broadcast(&rootCond);
+    for (int i = 0; i < threads; ++i)
+      pthread_cond_wait(&threadCond[i], rootMutex
+*/
+    pthread_barrier_wait(&endWaitBarrier);
+    LOCK(printMutex); 
+      delete root;
+      root = NULL;
+    UNLOCK(printMutex);
+
   }
 }
 
@@ -524,21 +538,37 @@ int main(int argc,char *argv[]){
       XFlush(display);
     }
   }
-    
+  
+  
+  pthread_cond_init(&rootCond, NULL); 
   pthread_mutex_init(&printMutex, NULL);
-  pthread_t printer;
-  for (int i = 0; i < N; ++i)
+  pthread_barrier_init(&beginWaitBarrier, NULL, threads+1);
+  pthread_barrier_init(&endWaitBarrier, NULL, threads+1);
+  for (int i = 0; i < N; ++i) 
     pthread_mutex_init(&mutex[i], NULL);
- 
+  
+  for (int i = 0; i < threads; ++i) {
+    pthread_cond_init(&threadCond[i], NULL); 
+    pthread_mutex_init(&threadMutex[i], NULL);
+  }
+
+  pthread_t printer;
   if (isEnable) {
     isComplete = 0;
     pthread_create(&printer, NULL, print, NULL); 
   }
   
   printf("Begin thread function \n");
+  pthread_t thread[40];
+  for (int i = 0; i < threads; ++i) 
+    pthread_create(&thread[i], NULL, runOnBody, (void *)i);
+
   thread_func(beginX, beginY, MAX(endX - beginX, endY - beginY));
   printf("End thread function \n");
   
+  for (int i = 0; i < threads; ++i) {
+    pthread_join(thread[i], NULL);
+  }
   if (isEnable) {
     isComplete = 1;
     pthread_join(printer, NULL);
