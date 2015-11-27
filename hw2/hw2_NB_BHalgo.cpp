@@ -49,7 +49,7 @@
 
 
 #define MAXN 1000010
-#define MINR 0.00000000001
+#define MINR 0.001
 #define FPS(fps) usleep(1000000/fps)
 #define F 30
 
@@ -342,16 +342,6 @@ inline pair<double, double> getAccel(Tree *root, const Node *curNode) {
   if (r <= MINR) {
     return pair<double, double>(0, 0);
   }
-  else if (d/r > theta) {
-    //printf("theta = %lf, d/r = %lf\n", theta, d/r);
-    for(int i = 0; i < 4; ++i) {
-      if (Tree *child = root->getChild(i)) {
-        pair<double, double> ret = getAccel(child, curNode);
-        ax_sum += ret.first;
-        ay_sum += ret.second;   
-      }
-    }
-  }
   else if (nums == 1 || d/r < theta) { 
     // let whole system be a body
     // double totalMass = (double)nums * root->mass; 
@@ -366,6 +356,16 @@ inline pair<double, double> getAccel(Tree *root, const Node *curNode) {
 
     return pair<double, double>(ax, ay);   
   } 
+  else if (d/r > theta) {
+   // printf("theta = %lf, d/r = %lf\n", theta, d/r);
+    for(int i = 0; i < 4; ++i) {
+      if (Tree *child = root->getChild(i)) {
+        pair<double, double> ret = getAccel(child, curNode);
+        ax_sum += ret.first;
+        ay_sum += ret.second;   
+      }
+    }
+  }
   
   return pair<double, double>(ax_sum, ay_sum);
 }
@@ -402,21 +402,6 @@ inline void thread_func(double beginX, double beginY, double len) {
     root->mass = mass;
     root->calMassCenter();
   
-    
-   /* 
-    root->dispatch(); 
-    #pragma omp parallel num_threads(4)
-    {
-      #pragma omp for schedule(static) nowait
-      for (int i = 0; i < 4; ++i) {
-        if (root->child[i]) {
-          build_tree(root->child[i], 0);
-        }
-      }
-      
-      #pragma omp barrier 
-    }
-  */
     build_tree(root, 0);
 
     UNLOCK(printMutex);
@@ -430,8 +415,10 @@ inline void thread_func(double beginX, double beginY, double len) {
       #pragma omp for schedule(static) nowait
       for (int i = 0; i < N; ++i){
         //printf("i = %d, thread = %d\n", i, omp_get_thread_num()); 
+        //LOCK(mutex[i]);
         Node curNode = node[i];
-        
+        //UNLOCK(mutex[i]);
+
         pair<double, double> accel = 
                     getAccel(root, &curNode);
         
@@ -445,11 +432,13 @@ inline void thread_func(double beginX, double beginY, double len) {
         double y_next = curNode.y + vy_next * times;
         //double x_next = NEXT(curNode.x, curNode.vx, ax, times);
         //double y_next = NEXT(curNode.y, curNode.vy, ay, times);
-
+        
+        //LOCK(mutex[i]);
         node[i].x = x_next;
         node[i].y = y_next;
         node[i].vx = vx_next;
         node[i].vy = vy_next;
+        //UNLOCK(mutex[i]);
        // printf("[%d], thread:%d, x:%lf, y:%lf, vx:%lf, vy:%lf", i, omp_get_thread_num(), x_next, y_next, vx_next, vy_next);
       }
     }
@@ -538,6 +527,9 @@ int main(int argc,char *argv[]){
     
   pthread_mutex_init(&printMutex, NULL);
   pthread_t printer;
+  for (int i = 0; i < N; ++i)
+    pthread_mutex_init(&mutex[i], NULL);
+ 
   if (isEnable) {
     isComplete = 0;
     pthread_create(&printer, NULL, print, NULL); 
