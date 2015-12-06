@@ -14,7 +14,6 @@
 #define LOCK(mutex) pthread_mutex_lock(&mutex)
 #define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 #define atof(tar, index) sscanf(argv[index], "%lf", &tar)
-#define isEnable(en, index) \
 
 typedef struct complextype
 {
@@ -53,7 +52,22 @@ int main(int argc, char **argv)
 	Window window;      //initialization for a window
 	int screen;         //which screen 
 
-	/* open connection with the server */ 
+	/* set window position */
+	int x = 0;
+	int y = 0;
+	
+    /* create graph */
+	GC gc;
+	XGCValues values;
+	long valuemask = 0;
+
+	/* border width in pixels */
+	int border_width = 0;
+	/* open connection with the server */
+    
+    if (!isEnable)
+        goto MAIN_LOOP;
+         
 	display = XOpenDisplay(NULL);
 	if(display == NULL) {
 		fprintf(stderr, "cannot open display\n");
@@ -64,21 +78,11 @@ int main(int argc, char **argv)
 
 	/* set window size */
 
-	/* set window position */
-	int x = 0;
-	int y = 0;
-
-	/* border width in pixels */
-	int border_width = 0;
 
 	/* create window */
 	window = XCreateSimpleWindow(display, RootWindow(display, screen), x, y, width, height, border_width,
 					BlackPixel(display, screen), WhitePixel(display, screen));
 	
-	/* create graph */
-	GC gc;
-	XGCValues values;
-	long valuemask = 0;
 	
 	gc = XCreateGC(display, window, valuemask, &values);
 	//XSetBackground (display, gc, WhitePixel (display, screen));
@@ -91,8 +95,9 @@ int main(int argc, char **argv)
 	XSync(display, 0);
     
     
+MAIN_LOOP:  	
     pthread_mutex_init(&drawMutex, NULL);
-    	
+
 	/* draw points */
 	int i, j;
     #pragma omp parallel num_threads(threads) private(i, j)
@@ -122,7 +127,8 @@ int main(int argc, char **argv)
                     lengthsq = z.real*z.real + z.imag*z.imag; 
                     repeats++;
                 }
-                    
+                
+                if (!isEnable) continue;    
                 LOCK(drawMutex);
                     XSetForeground (display, gc,  1024 * 1024 * (repeats % 256));		
                     XDrawPoint (display, window, gc, i, j);
@@ -130,7 +136,9 @@ int main(int argc, char **argv)
             }
         }
     }
-	XFlush(display);
-	sleep(1000);
+
+    if (isEnable)  
+         XFlush(display);
+	// sleep(1000);
 	return 0;
 }
