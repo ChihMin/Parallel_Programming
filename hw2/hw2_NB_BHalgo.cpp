@@ -20,7 +20,9 @@
 #define LOCK(mutex) pthread_mutex_lock(&mutex)
 #define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 
-#define EnableGrid 1
+#ifndef EnableGrid
+  #define EnableGrid 1
+#endif
 
 #define G (6.67384*pow(10, -11))
 #define powOfR(dx, dy) (pow(dx, 2)+pow(dy, 2))
@@ -319,7 +321,7 @@ inline void print() {
       if (yPix < 0 || yPix >= XLength) continue;
       Draw(xPix, yPix, White);
     } 
-    XFlush(display);
+    //XFlush(display);
     //FPS(5);
 }
 
