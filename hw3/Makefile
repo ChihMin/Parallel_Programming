@@ -7,6 +7,10 @@ FLAGS = -fopenmp
 debug: FLAGS += -g
 debug: all
 
+mpi_static: CC = mpic++
+mpi_static: NAME = MS_MPI_static
+mpi_static: all
+
 openmp_dynamic: NAME = MS_OpenMP_dynamic
 openmp_dynamic: all
 
