@@ -46,7 +46,6 @@ double maxX, maxY;
 int threads;
 int width = 800, height = 800;
 bool isEnable = false;
-bool isCheck[800][800];
 
 int main(int argc, char **argv)
 {
@@ -227,7 +226,6 @@ int main(int argc, char **argv)
         //delete [] pixel;
     }
     if (isEnable && rank == ROOT) {
-        memset(isCheck, 0, sizeof(isCheck));
         /*
         for (int index = 0; index < curIndex; ++index) {
             isCheck[pixel[index].i][pixel[index].j] = 1;
@@ -259,21 +257,13 @@ int main(int argc, char **argv)
               int j = it->j;
               int repeats = it->repeats;
 
-              isCheck[i][j] = 1;
               XSetForeground (display, gc,  
                           1024 * 1024 * (repeats % 256));	
               XDrawPoint (display, window, gc, i, j);
-              //usleep(10);
           }
-        printf("Total point = %d\n", v.size()); 
-        for (int i = 0; i < width; ++i)
-            for (int j = 0; j < height; ++j)
-                if (!isCheck[i][j])
-                    printf("check : %d %d\n", i, j);
-        
     }
 
     MPI_Finalize();
-    sleep(100);
+    if (isEnable) sleep(5);
 	return 0;
 }

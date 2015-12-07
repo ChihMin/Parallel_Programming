@@ -38,7 +38,6 @@ double maxX, maxY;
 int threads;
 int width = 800, height = 800;
 bool isEnable = false;
-bool isCheck[800][800];
 
 int main(int argc, char **argv)
 {
@@ -174,9 +173,7 @@ int main(int argc, char **argv)
        // printf("rank %d send pixel...\n", rank);
     }
     else if (isEnable) {
-        memset(isCheck, 0, sizeof(isCheck));
         for (int index = 0; index < curIndex; ++index) {
-            isCheck[pixel[index].i][pixel[index].j] = 1;
             XSetForeground (display, gc,  
                         1024 * 1024 * (pixel[index].repeats % 256));	
             XDrawPoint (display, window, gc, pixel[index].i, pixel[index].j);
@@ -193,26 +190,22 @@ int main(int argc, char **argv)
                 drawGraph.push_back(pixel[i]);
             delete [] pixel;
         }
+        int drawTimes = 2;
+        while (drawTimes--) {
+          for (int k = 0; k < drawGraph.size(); ++k) {
+              int i = drawGraph[k].i;
+              int j = drawGraph[k].j;
+              int repeats = drawGraph[k].repeats;
 
-        for (int k = 0; k < drawGraph.size(); ++k) {
-            int i = drawGraph[k].i;
-            int j = drawGraph[k].j;
-            int repeats = drawGraph[k].repeats;
-
-            isCheck[i][j] = 1;
-            XSetForeground (display, gc,  
-                        1024 * 1024 * (repeats % 256));	
-            XDrawPoint (display, window, gc, i, j);
+              XSetForeground (display, gc,  
+                          1024 * 1024 * (repeats % 256));	
+              XDrawPoint (display, window, gc, i, j);
+          }
         }
-        printf("Bomb !! %d\n", __LINE__); 
-        for (int i = 0; i < width; ++i)
-            for (int j = 0; j < height; ++j)
-                if (!isCheck[i][j])
-                    printf("check : %d %d\n", i, j);
     }
     delete [] pixel;
 
     MPI_Finalize();
-    sleep(100);
+    if (isEnable) sleep(5);
 	return 0;
 }
