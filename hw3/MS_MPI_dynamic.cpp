@@ -223,7 +223,7 @@ int main(int argc, char **argv)
             printf("Rank[%d] Send curIndex %d success\n", rank, curIndex);         
             send(pixel, curIndex * sizeof(Pixel), MPI_CHAR, ROOT);
             printf("Rank[%d] Send pixel success\n", rank);
-       }
+        }
         //delete [] pixel;
     }
     if (isEnable && rank == ROOT) {
@@ -252,16 +252,19 @@ int main(int argc, char **argv)
         }
        
         std::vector<Pixel>::iterator it;
-        for (it = v.begin(); it != v.end(); ++it) {
-            int i = it->i;
-            int j = it->j;
-            int repeats = it->repeats;
+        int drawTimes = 2;
+        while (drawTimes--)
+          for (it = v.begin(); it != v.end(); ++it) {
+              int i = it->i;
+              int j = it->j;
+              int repeats = it->repeats;
 
-            isCheck[i][j] = 1;
-            XSetForeground (display, gc,  
-                        1024 * 1024 * (repeats % 256));	
-            XDrawPoint (display, window, gc, i, j);
-        }
+              isCheck[i][j] = 1;
+              XSetForeground (display, gc,  
+                          1024 * 1024 * (repeats % 256));	
+              XDrawPoint (display, window, gc, i, j);
+              //usleep(10);
+          }
         printf("Total point = %d\n", v.size()); 
         for (int i = 0; i < width; ++i)
             for (int j = 0; j < height; ++j)
