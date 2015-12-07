@@ -128,6 +128,8 @@ int main(int argc, char **argv)
     
     MPI_Barrier(MPI_COMM_WORLD); 
     if (rank == 0) {
+        if (size == 1) goto ROOT_LOOP; 
+        
         bool *isReady = new bool[size];
         int thread = 1;
         bool isLaunch; 
@@ -151,7 +153,7 @@ int main(int argc, char **argv)
                     thread = (thread + 1 ) % size;
             }
         }
-
+        
         for (int i = 1; i < size; ++i) {
             int flag;
             do {
@@ -162,20 +164,22 @@ int main(int argc, char **argv)
         }
     }
     else {
+
+ROOT_LOOP:
         std::vector<Pixel> pixelArray;
         int curIndex = 0;
         int beginPos = rank != size - 1 ?  
             numPerTask * (rank) : (rank) * (numPerTask - (width % (size)));
         
          
-        //printf("rank %d -> begin = %d, numTasks = %d\n", rank, beginPos, numPerTask);
-    
         /*** Tell ROOT I'm ready ***/
         bool isLaunch = true;
-        Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
+        int i = width - 1;
+        if (rank != 0) {
+          Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
          
-        int i = 1;
-        recv(&i, 1, MPI_INT, ROOT);    
+          recv(&i, 1, MPI_INT, ROOT);
+        }
         while (i != -1) {
             for (int j = 0; j < height; j++) {
                 // printf("rank %d : (%d, %d)\n", rank, i, j);
@@ -210,10 +214,27 @@ int main(int argc, char **argv)
                 if (!isEnable) continue;
                 pixelArray.push_back(Pixel(i, j, repeats));
             }
-            Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
-            recv(&i, 1, MPI_INT, ROOT);    
+            if (size == 1)  i--;
+            if (rank != ROOT) {
+              Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
+              recv(&i, 1, MPI_INT, ROOT);
+            }
         }
-        if (isEnable) { 
+
+        if (size == 1 && isEnable) {
+            printf("size == 1 && pixelArray size = %d\n", pixelArray.size());
+            int drawTimes = 2;
+            while (drawTimes--)
+            for (int k = 0; k < pixelArray.size(); ++k) {
+              int i = pixelArray[k].i;
+              int j = pixelArray[k].j;
+              int repeats = pixelArray[k].repeats;
+              XSetForeground (display, gc,  
+                        1024 * 1024 * (repeats % 256));	
+              XDrawPoint (display, window, gc, i, j);
+            }
+        }
+        else if (isEnable) { 
             Pixel *pixel = new Pixel[pixelArray.size()];
             for (int i = 0; i < pixelArray.size(); ++i)
                 pixel[i] = pixelArray[i];
@@ -225,15 +246,7 @@ int main(int argc, char **argv)
         }
         //delete [] pixel;
     }
-    if (isEnable && rank == ROOT) {
-        /*
-        for (int index = 0; index < curIndex; ++index) {
-            isCheck[pixel[index].i][pixel[index].j] = 1;
-            XSetForeground (display, gc,  
-                        1024 * 1024 * (pixel[index].repeats % 256));	
-            XDrawPoint (display, window, gc, pixel[index].i, pixel[index].j);
-        }
-        */    
+    if (isEnable && rank == ROOT && size != 1) {
         std::vector<Pixel> v; 
         for (int threads = 1; threads < size; ++threads) {
             int pixelNum;
