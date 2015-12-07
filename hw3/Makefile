@@ -5,11 +5,15 @@ SRC = $(NAME).cpp
 FLAGS = -fopenmp
 
 debug: FLAGS += -g
-debug: all
+debug: mpi_static
 
 mpi_static: CC = mpic++
 mpi_static: NAME = MS_MPI_static
 mpi_static: all
+
+mpi_dynamic: CC = mpic++
+mpi_dynamic: NAME = MS_MPI_dynamic
+mpi_dynamic: all
 
 openmp_dynamic: NAME = MS_OpenMP_dynamic
 openmp_dynamic: all
