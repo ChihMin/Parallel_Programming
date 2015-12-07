@@ -2,37 +2,56 @@
    Sequential Mandelbort sort
  */
 
-#include <mpi.h>
+#include "mpi.h"
 #include <X11/Xlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <omp.h>
-#include <pthread.h>
 #include <string>
 #include <cstring>
+#include <vector>
 
-#define LOCK(mutex) pthread_mutex_lock(&mutex)
-#define UNLOCK(mutex) pthread_mutex_unlock(&mutex)
 #define atof(tar, index) sscanf(argv[index], "%lf", &tar)
+#define ROOT 0
+#define send(buf, count, type, dest) \
+  MPI_Send(buf, count, type, dest, 0, MPI_COMM_WORLD);
+
+#define recv(buf, count, type, source) \
+  MPI_Recv(buf, count, type, source, \
+              MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+#define Isend(buf, count, type, dest, req) \
+  MPI_Isend(buf, count, type, dest, 0, MPI_COMM_WORLD, req);
+
+#define Irecv(buf, count, type, src, req) \
+  MPI_Irecv(buf, count, type, src, MPI_ANY_TAG, \
+                MPI_COMM_WORLD, req); 
+
 
 typedef struct complextype
 {
 	double real, imag;
 } Compl;
 
-pthread_mutex_t drawMutex;
+struct Pixel {
+    int i, j, repeats;
+    Pixel(){};
+    Pixel(int _i, int _j, int _repeat) {
+        i = _i, j = _j, repeats = _repeat;
+    }
+};
+
 double minX, minY;
 double maxX, maxY;
 int threads;
 int width = 800, height = 800;
 bool isEnable = false;
-
-using namespace std;
+bool isCheck[800][800];
 
 int main(int argc, char **argv)
 {
     threads = atoi(argv[1]);
+    
     atof(minX, 2);
     atof(maxX, 3);
     atof(minY, 4);
@@ -40,19 +59,25 @@ int main(int argc, char **argv)
     width = atoi(argv[6]);
     height = atoi(argv[7]);
     
-    string in = argv[8];
+    std::string in = argv[8];
     if (in == "enable")
         isEnable = true;
     else
         isEnable = false;
     
+/********* MPI MISSION START *********/
     
-    printf("threads = %d\n", threads); 
-     
+    int rank, size;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+    MPI_Comm_size (MPI_COMM_WORLD, &size);
+    
+    MPI_Status status;
+    MPI_Request request[size];
     Display *display;
 	Window window;      //initialization for a window
 	int screen;         //which screen 
-
+   
 	/* set window position */
 	int x = 0;
 	int y = 0;
@@ -66,47 +91,95 @@ int main(int argc, char **argv)
 	int border_width = 0;
 	/* open connection with the server */
     
-    if (!isEnable)
-        goto MAIN_LOOP;
-         
-	display = XOpenDisplay(NULL);
-	if(display == NULL) {
-		fprintf(stderr, "cannot open display\n");
-		return 0;
-	}
-
-	screen = DefaultScreen(display);
-
-	/* set window size */
-
-
-	/* create window */
-	window = XCreateSimpleWindow(display, RootWindow(display, screen), x, y, width, height, border_width,
-					BlackPixel(display, screen), WhitePixel(display, screen));
-	
-	
-	gc = XCreateGC(display, window, valuemask, &values);
-	//XSetBackground (display, gc, WhitePixel (display, screen));
-	XSetForeground (display, gc, BlackPixel (display, screen));
-	XSetBackground(display, gc, 0X0000FF00);
-	XSetLineAttributes (display, gc, 1, LineSolid, CapRound, JoinRound);
-	
-	/* map(show) the window */
-	XMapWindow(display, window);
-	XSync(display, 0);
-    
-    
-MAIN_LOOP:  	
-    pthread_mutex_init(&drawMutex, NULL);
-
 	/* draw points */
-	int i, j;
-    #pragma omp parallel num_threads(threads) private(i, j)
-    {
-        #pragma omp for schedule(static)
-        for(i=0; i<width; i++) {
-            //printf("[OUT] thread = %d, i = %d\n", omp_get_thread_num(), i);	
-            for(j=0; j<height; j++) {
+    int numPerTask = width / (size);
+    if (rank == size - 1)
+       numPerTask += width % (size);
+    
+    if (isEnable && rank == 0) {
+        display = XOpenDisplay(NULL);
+        if(display == NULL) {
+            fprintf(stderr, "cannot open display\n");
+            return 0;
+        }
+
+        screen = DefaultScreen(display);
+
+        /* set window size */
+        
+        /* create window */
+        window = XCreateSimpleWindow(display, 
+            RootWindow(display, screen), x, y, 
+                width, height, border_width, 
+                    BlackPixel(display, screen), 
+                        WhitePixel(display, screen));
+        
+        gc = XCreateGC(display, window, valuemask, &values);
+        //XSetBackground (display, gc, WhitePixel (display, screen));
+        XSetForeground (display, gc, BlackPixel (display, screen));
+        XSetBackground(display, gc, 0X0000FF00);
+        XSetLineAttributes (display, gc, 1, LineSolid, CapRound, JoinRound);
+        
+        /* map(show) the window */
+        XMapWindow(display, window);
+        XSync(display, 0);
+        if (isEnable)  
+             XFlush(display);
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD); 
+    if (rank == 0) {
+        bool *isReady = new bool[size];
+        int thread = 1;
+        bool isLaunch; 
+        bool gar; 
+        for (int i = 1; i < size; ++i)
+            Irecv(&gar, 1, MPI_CHAR, i, &request[i]); 
+
+        for (int i = 0; i < width; ++i) {
+            isLaunch = false;
+            while (!isLaunch) {
+                int flag;
+                MPI_Test(&request[thread], &flag, &status);
+                if (flag) {
+                    Irecv(&gar, 1, MPI_CHAR, thread, &request[thread]); 
+                    send(&i, 1, MPI_INT, thread);
+                    isLaunch = true;
+                } 
+                /* Round robin ... */
+                thread = (thread + 1) % size;
+                if (thread == 0)
+                    thread = (thread + 1 ) % size;
+            }
+        }
+
+        for (int i = 1; i < size; ++i) {
+            int flag;
+            do {
+                MPI_Test(&request[i], &flag, &status);
+            } while(!flag);
+            int stop = -1;
+            send(&stop, 1, MPI_INT, i);
+        }
+    }
+    else {
+        std::vector<Pixel> pixelArray;
+        int curIndex = 0;
+        int beginPos = rank != size - 1 ?  
+            numPerTask * (rank) : (rank) * (numPerTask - (width % (size)));
+        
+         
+        //printf("rank %d -> begin = %d, numTasks = %d\n", rank, beginPos, numPerTask);
+    
+        /*** Tell ROOT I'm ready ***/
+        bool isLaunch = true;
+        Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
+         
+        int i = 1;
+        recv(&i, 1, MPI_INT, ROOT);    
+        while (i != -1) {
+            for (int j = 0; j < height; j++) {
+                // printf("rank %d : (%d, %d)\n", rank, i, j);
                 Compl z, c;
                 double temp, lengthsq;
                 int repeats;
@@ -116,30 +189,88 @@ MAIN_LOOP:
                 double scaleX = width / (maxX - minX);
                 double scaleY = height / (maxY - minY);
                 
-                c.real = ((double)i + scaleX * minX) / scaleX; /* Theorem : If c belongs to M(Mandelbrot set), then |c| <= 2 */
-                c.imag = ((double)j + scaleY * minY) / scaleY;; /* So needs to scale the window */
+                c.real = ((double)i + scaleX * minX) / scaleX; 
+                /* Theorem : If c belongs to M(Mandelbrot set), then |c| <= 2 */
+                
+                c.imag = ((double)j + scaleY * minY) / scaleY; 
+                /* So needs to scale the window */
+
                 repeats = 0;
                 lengthsq = 0.0;
 
-                while(repeats < 10000 && lengthsq < 4.0) { /* Theorem : If c belongs to M, then |Zn| <= 2. So Zn^2 <= 4 */
+                while(repeats < 10000 && lengthsq < 4.0) { 
+                    /* Theorem : If c belongs to M, then |Zn| <= 2. So Zn^2 <= 4 */
                     temp = z.real*z.real - z.imag*z.imag + c.real;
                     z.imag = 2*z.real*z.imag + c.imag;
                     z.real = temp;
-                    lengthsq = z.real*z.real + z.imag*z.imag; 
+                    lengthsq = z.real*z.real + z.imag*z.imag;
+                     
                     repeats++;
                 }
                 
-                if (!isEnable) continue;    
-                LOCK(drawMutex);
-                    XSetForeground (display, gc,  1024 * 1024 * (repeats % 256));		
-                    XDrawPoint (display, window, gc, i, j);
-                UNLOCK(drawMutex);
+                if (!isEnable) continue;
+                pixelArray.push_back(Pixel(i, j, repeats));
             }
+            Isend(&isLaunch, 1, MPI_CHAR, ROOT, &request[rank]); 
+            recv(&i, 1, MPI_INT, ROOT);    
         }
+        if (isEnable) { 
+            Pixel *pixel = new Pixel[pixelArray.size()];
+            for (int i = 0; i < pixelArray.size(); ++i)
+                pixel[i] = pixelArray[i];
+            curIndex = pixelArray.size();
+            send(&curIndex, 1, MPI_INT, ROOT);
+            printf("Rank[%d] Send curIndex %d success\n", rank, curIndex);         
+            send(pixel, curIndex * sizeof(Pixel), MPI_CHAR, ROOT);
+            printf("Rank[%d] Send pixel success\n", rank);
+       }
+        //delete [] pixel;
+    }
+    if (isEnable && rank == ROOT) {
+        memset(isCheck, 0, sizeof(isCheck));
+        /*
+        for (int index = 0; index < curIndex; ++index) {
+            isCheck[pixel[index].i][pixel[index].j] = 1;
+            XSetForeground (display, gc,  
+                        1024 * 1024 * (pixel[index].repeats % 256));	
+            XDrawPoint (display, window, gc, pixel[index].i, pixel[index].j);
+        }
+        */    
+        std::vector<Pixel> v; 
+        for (int threads = 1; threads < size; ++threads) {
+            int pixelNum;
+            recv(&pixelNum, sizeof(int), MPI_INT, threads);
+            
+            printf("Thread[%d] recv pixelNum =  %d\n", threads, pixelNum);   
+            
+            Pixel *pixel = new Pixel[pixelNum];
+            recv(pixel, pixelNum * sizeof(Pixel), MPI_CHAR, threads);
+            
+            for (int i = 0; i < pixelNum; ++i)
+                v.push_back(pixel[i]);
+            delete [] pixel;
+        }
+       
+        std::vector<Pixel>::iterator it;
+        for (it = v.begin(); it != v.end(); ++it) {
+            int i = it->i;
+            int j = it->j;
+            int repeats = it->repeats;
+
+            isCheck[i][j] = 1;
+            XSetForeground (display, gc,  
+                        1024 * 1024 * (repeats % 256));	
+            XDrawPoint (display, window, gc, i, j);
+        }
+        printf("Total point = %d\n", v.size()); 
+        for (int i = 0; i < width; ++i)
+            for (int j = 0; j < height; ++j)
+                if (!isCheck[i][j])
+                    printf("check : %d %d\n", i, j);
+        
     }
 
-    if (isEnable)  
-         XFlush(display);
-	// sleep(1000);
+    MPI_Finalize();
+    sleep(100);
 	return 0;
 }

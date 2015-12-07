@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <string>
 #include <cstring>
+#include <vector>
 
 #define atof(tar, index) sscanf(argv[index], "%lf", &tar)
 #define ROOT 0
@@ -86,7 +87,7 @@ int main(int argc, char **argv)
     if (rank == size - 1)
        numPerTask += width % (size);
     
-    if (rank == 0) {
+    if (isEnable && rank == 0) {
         display = XOpenDisplay(NULL);
         if(display == NULL) {
             fprintf(stderr, "cannot open display\n");
@@ -125,7 +126,9 @@ int main(int argc, char **argv)
     
      
     printf("rank %d -> begin = %d, numTasks = %d\n", rank, beginPos, numPerTask);
+    int ansK = -1;
     for(int i = beginPos, k = 0; k < numPerTask; i++, k++) {
+        ansK = ansK > i ? ansK : i;
         for(int j=0; j<height; j++) {
             // printf("rank %d : (%d, %d)\n", rank, i, j);
             Compl z, c;
@@ -160,6 +163,9 @@ int main(int argc, char **argv)
             pixel[curIndex++] = Pixel(i, j, repeats);
         }
     }
+
+    printf("Rank[%d] ansK = %d\n", rank, ansK);
+    
     if (rank != 0) {
         send(&curIndex, 1, MPI_INT, ROOT);
        // printf("rank %d send curIndex %d ...\n", rank, curIndex);
@@ -167,7 +173,7 @@ int main(int argc, char **argv)
         send(pixel, curIndex * sizeof(Pixel), MPI_CHAR, ROOT);
        // printf("rank %d send pixel...\n", rank);
     }
-    else {
+    else if (isEnable) {
         memset(isCheck, 0, sizeof(isCheck));
         for (int index = 0; index < curIndex; ++index) {
             isCheck[pixel[index].i][pixel[index].j] = 1;
@@ -176,22 +182,29 @@ int main(int argc, char **argv)
             XDrawPoint (display, window, gc, pixel[index].i, pixel[index].j);
         }
             
-         
+        std::vector <Pixel> drawGraph; 
         for (int threads = 1; threads < size; ++threads) {
             int pixelNum;
             recv(&pixelNum, sizeof(int), MPI_INT, threads);
             // printf("recv pixelNum =  %d\n", pixelNum);   
             Pixel *pixel = new Pixel[pixelNum];
             recv(pixel, pixelNum * sizeof(Pixel), MPI_CHAR, threads);
-            for (int j = 0; j < pixelNum; ++j) {
-                isCheck[pixel[j].i][pixel[j].j] = 1;
-                XSetForeground (display, gc,  
-                            1024 * 1024 * (pixel[j].repeats % 256));	
-                XDrawPoint (display, window, gc, pixel[j].i, pixel[j].j);
-            }
+            for (int i = 0; i < pixelNum; ++i)
+                drawGraph.push_back(pixel[i]);
             delete [] pixel;
         }
-    
+
+        for (int k = 0; k < drawGraph.size(); ++k) {
+            int i = drawGraph[k].i;
+            int j = drawGraph[k].j;
+            int repeats = drawGraph[k].repeats;
+
+            isCheck[i][j] = 1;
+            XSetForeground (display, gc,  
+                        1024 * 1024 * (repeats % 256));	
+            XDrawPoint (display, window, gc, i, j);
+        }
+        printf("Bomb !! %d\n", __LINE__); 
         for (int i = 0; i < width; ++i)
             for (int j = 0; j < height; ++j)
                 if (!isCheck[i][j])
