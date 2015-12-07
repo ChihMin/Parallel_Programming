@@ -127,9 +127,7 @@ int main(int argc, char **argv)
     }
     
     MPI_Barrier(MPI_COMM_WORLD); 
-    if (rank == 0) {
-        if (size == 1) goto ROOT_LOOP; 
-        
+    if (rank == 0 && size != 1) {
         bool *isReady = new bool[size];
         int thread = 1;
         bool isLaunch; 
@@ -164,8 +162,6 @@ int main(int argc, char **argv)
         }
     }
     else {
-
-ROOT_LOOP:
         std::vector<Pixel> pixelArray;
         int curIndex = 0;
         int beginPos = rank != size - 1 ?  
@@ -222,7 +218,6 @@ ROOT_LOOP:
         }
 
         if (size == 1 && isEnable) {
-            printf("size == 1 && pixelArray size = %d\n", pixelArray.size());
             int drawTimes = 2;
             while (drawTimes--)
             for (int k = 0; k < pixelArray.size(); ++k) {
