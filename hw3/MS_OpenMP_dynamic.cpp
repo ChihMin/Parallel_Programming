@@ -100,11 +100,15 @@ MAIN_LOOP:
 
 	/* draw points */
 	int i, j;
+    int points[2000];
+    memset(points, 0, sizeof(points));
     #pragma omp parallel num_threads(threads) private(i, j)
     {
-        #pragma omp for schedule(dynamic, 1)
+        double start = omp_get_wtime();
+        #pragma omp for schedule(dynamic, 1) nowait
         for(i=0; i<width; i++) {
             //printf("[OUT] thread = %d, i = %d\n", omp_get_thread_num(), i);	
+            points[omp_get_thread_num()]++;
             for(j=0; j<height; j++) {
                 Compl z, c;
                 double temp, lengthsq;
@@ -135,6 +139,8 @@ MAIN_LOOP:
                 UNLOCK(drawMutex);
             }
         }
+        double end = omp_get_wtime();
+        printf("TIMER: rank %d time %.6lf points %d\n", omp_get_thread_num(), end - start, points[omp_get_thread_num()]);
     }
 
     if (isEnable)  

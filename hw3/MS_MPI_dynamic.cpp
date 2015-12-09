@@ -65,12 +65,14 @@ int main(int argc, char **argv)
         isEnable = false;
     
 /********* MPI MISSION START *********/
-    
+    double start, end;
     int rank, size;
+    
     MPI_Init(&argc, &argv);
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &size);
-    
+    start = MPI_Wtime();
+
     MPI_Status status;
     MPI_Request request[size];
     Display *display;
@@ -92,6 +94,7 @@ int main(int argc, char **argv)
     
 	/* draw points */
     int numPerTask = width / (size);
+    int points = 0;
     if (rank == size - 1)
        numPerTask += width % (size);
     
@@ -177,6 +180,7 @@ int main(int argc, char **argv)
           recv(&i, 1, MPI_INT, ROOT);
         }
         while (i != -1) {
+            points++;
             for (int j = 0; j < height; j++) {
                 // printf("rank %d : (%d, %d)\n", rank, i, j);
                 Compl z, c;
@@ -270,6 +274,8 @@ int main(int argc, char **argv)
               XDrawPoint (display, window, gc, i, j);
           }
     }
+    end = MPI_Wtime();
+    printf("TIMER: rank %d time %.6lf points %d\n", rank, end - start, points);
 
     MPI_Finalize();
     if (isEnable) sleep(5);

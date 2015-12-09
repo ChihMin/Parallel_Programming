@@ -41,6 +41,8 @@ bool isEnable = false;
 
 int main(int argc, char **argv)
 {
+    double start, end;
+    
     threads = atoi(argv[1]);
     
     atof(minX, 2);
@@ -62,6 +64,7 @@ int main(int argc, char **argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &size);
+    start = MPI_Wtime();
     
     MPI_Status status;
     Display *display;
@@ -121,8 +124,7 @@ int main(int argc, char **argv)
     Pixel *pixel = new Pixel[numPerTask * height];
     int curIndex = 0;
     int beginPos = rank != size - 1 ?  
-        numPerTask * (rank) : (rank) * (numPerTask - (width % (size)));
-    
+        numPerTask * (rank) : (rank) * (numPerTask - (width % (size))); 
      
     printf("rank %d -> begin = %d, numTasks = %d\n", rank, beginPos, numPerTask);
     int ansK = -1;
@@ -173,6 +175,8 @@ int main(int argc, char **argv)
        // printf("rank %d send pixel...\n", rank);
     }
     else if (isEnable) {
+        int drawTimes = 2;
+        while (drawTimes--) 
         for (int index = 0; index < curIndex; ++index) {
             XSetForeground (display, gc,  
                         1024 * 1024 * (pixel[index].repeats % 256));	
@@ -190,7 +194,7 @@ int main(int argc, char **argv)
                 drawGraph.push_back(pixel[i]);
             delete [] pixel;
         }
-        int drawTimes = 2;
+        drawTimes = 2;
         while (drawTimes--) {
           for (int k = 0; k < drawGraph.size(); ++k) {
               int i = drawGraph[k].i;
@@ -205,7 +209,12 @@ int main(int argc, char **argv)
     }
     delete [] pixel;
 
+    end = MPI_Wtime();
+    printf("TIMER: rank %d time %.6lf points %d\n", rank, end - start, numPerTask);
+
     MPI_Finalize();
     if (isEnable) sleep(5);
+
+    
 	return 0;
 }

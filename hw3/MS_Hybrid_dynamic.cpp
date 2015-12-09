@@ -3,6 +3,7 @@
  */
 
 #include "mpi.h"
+#include <omp.h>
 #include <X11/Xlib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -188,7 +189,8 @@ int main(int argc, char **argv)
             {
               #pragma omp for schedule(dynamic, 1) 
               for (j = 0; j < height; j++) {
-                  // printf("rank %d : (%d, %d)\n", rank, i, j);
+                  if (rank == 1)
+                    printf("thread %d , j = %d\n", omp_get_thread_num(), j);
                   Compl z, c;
                   double temp, lengthsq;
                   int repeats;

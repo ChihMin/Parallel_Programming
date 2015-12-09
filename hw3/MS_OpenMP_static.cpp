@@ -97,13 +97,17 @@ int main(int argc, char **argv)
     
 MAIN_LOOP:  	
     pthread_mutex_init(&drawMutex, NULL);
+    int points[2000];
+    memset(points, 0, sizeof(points));
 
 	/* draw points */
 	int i, j;
     #pragma omp parallel num_threads(threads) private(i, j)
     {
-        #pragma omp for schedule(static)
+        double start = omp_get_wtime();
+        #pragma omp for schedule(static) nowait
         for(i=0; i<width; i++) {
+            points[omp_get_thread_num()]++;
             //printf("[OUT] thread = %d, i = %d\n", omp_get_thread_num(), i);	
             for(j=0; j<height; j++) {
                 Compl z, c;
@@ -135,6 +139,9 @@ MAIN_LOOP:
                 UNLOCK(drawMutex);
             }
         }
+        
+        double end = omp_get_wtime();
+        printf("TIMER: rank %d time %.6lf points %d\n", omp_get_thread_num(), end - start, points[omp_get_thread_num()]);
     }
 
     if (isEnable)  
