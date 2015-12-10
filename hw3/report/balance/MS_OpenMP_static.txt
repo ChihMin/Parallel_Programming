@@ -1,0 +1,12 @@
+TIMER: rank 11 time 0.052864 points 2080000
+TIMER: rank 10 time 0.057285 points 2080000
+TIMER: rank 9 time 0.059664 points 2080000
+TIMER: rank 8 time 0.068326 points 2080000
+TIMER: rank 0 time 0.175119 points 2085000
+TIMER: rank 1 time 0.650880 points 2085000
+TIMER: rank 7 time 3.665077 points 2085000
+TIMER: rank 2 time 16.637022 points 2085000
+TIMER: rank 3 time 20.340071 points 2085000
+TIMER: rank 4 time 50.965963 points 2085000
+TIMER: rank 6 time 54.910712 points 2085000
+TIMER: rank 5 time 70.922805 points 2085000
