@@ -30,6 +30,71 @@ xlabel('Number of threads/ranks', 'FontSize', 16);
 ylabel('time(sec)', 'FontSize', 16);
 
 %% Weak
+clear;
+filename = ['MS_MPI_static MS_MPI_dynamic MS_OpenMP_static MS_OpenMP_dynamic MS_Hybrid_static MS_Hybrid_dynamic'];
+filename = strsplit(filename, ' ');
+times(1:6, 1:15) = 0;
+test(1:15) = 0;
+for i = 1:6, 
+    str = ['weak_N/' char(filename(i)) '.txt']
+    f = fopen(str);
+    
+    while ~feof(f)
+        ret = fscanf(f, '%d %f', 2); 
+        if ~isempty(ret),
+            N = ret(1);
+            test(N/200) = N;
+            time = ret(2);
+            times(i, N/200) = time;
+        end
+    end
+    
+    % A = [A fscanf(f, '%f %f')];  
+    fclose(f);
+end
 
+plot(times');
+set(gca,...
+    'XTickLabel', test,...
+    'XTick', 1:15);
+legend('MPI Static', 'MPI Dynamic', 'OpenMP Static', 'OpenMP Dynamic', 'Hybrid Static', 'Hybrid Dynamic');
+xlabel('Number of Testcase(N)', 'FontSize', 16); 
+ylabel('time(sec)', 'FontSize', 16);
 
+%% 
+clear;
+filename = ['MS_MPI_static MS_MPI_dynamic MS_OpenMP_static MS_OpenMP_dynamic MS_Hybrid_static MS_Hybrid_dynamic'];
+filename = strsplit(filename, ' ');
+times(1:6, 1:12) = 0;
+points(1:6, 1:12) = 0;
+rank(1:6, 1:12) = 0;
+for i = 1:6, 
+    str = ['balance/' char(filename(i)) '.txt']
+    f = fopen(str);
+    
+    while ~feof(f)
+        str = fgets(f);
+        element = strsplit(str, ' ');
+        C = cellstr(element);
+        j = str2double(C(3)) + 1;
+        
+        rank(i, j) = str2double(C(3));
+        times(i, j) = str2double(C(5));
+        points(i, j) = str2double(C(7));
+        if i == 1,
+            points(i, j) = points(i, j) * 5000;
+        end
+    end
+    
+ 
+    fclose(f);
+end
 
+bar(points');
+title('Points');
+set(gca,...
+    'XTickLabel', rank(1,:),...
+    'XTick', 1:12);
+legend('MPI Static', 'MPI Dynamic', 'OpenMP Static', 'OpenMP Dynamic', 'Hybrid Static', 'Hybrid Dynamic');
+xlabel('Thread/Rank Number', 'FontSize', 16); 
+ylabel('Points', 'FontSize', 16);
