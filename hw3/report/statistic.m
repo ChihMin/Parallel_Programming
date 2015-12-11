@@ -86,7 +86,6 @@ for i = 1:6,
         end
     end
     
- 
     fclose(f);
 end
 
@@ -98,3 +97,52 @@ set(gca,...
 legend('MPI Static', 'MPI Dynamic', 'OpenMP Static', 'OpenMP Dynamic', 'Hybrid Static', 'Hybrid Dynamic');
 xlabel('Thread/Rank Number', 'FontSize', 16); 
 ylabel('Points', 'FontSize', 16);
+
+%% Best
+clear;
+filename = 'MS_Hybrid_static_10000';
+filename = strsplit(filename, ' ');
+data(1:4, 1:12) = double(1);
+count(1:4, 1:12) = 0;
+for i = 1:1,
+    str = ['best/' char(filename(i)) '.txt']
+    f = fopen(str);
+    
+    while ~feof(f)
+        ret = fscanf(f, '%d %d %d %f', 4); 
+        if ~isempty(ret),
+            node = ret(1)
+            ppn = ret(2)
+            thread = ppn / ret(3)
+            time = ret(4)
+            data(node, ppn) = data(node, ppn) * time;
+            count(node, ppn) = count(node, ppn) + 1;
+        end
+    end
+    for i = 1:4,
+        for j = 1:12,
+            data(i, j) = data(i, j) .^ (1/count(i, j));
+        end
+    end
+    
+    fclose(f);
+end
+bar3(data');
+set(gca,...
+    'XTick', 1:4);
+set(gca,...
+    'YTick', 1:12);
+xlabel('Node', 'FontSize', 16);
+ylabel('PPN', 'FontSize', 16);
+zlabel('Time(sec)', 'FontSize', 16);
+colormap autumn;
+
+%{
+plot(times');
+set(gca,...
+    'XTickLabel', test,...
+    'XTick', 1:15);
+legend('MPI Static', 'MPI Dynamic', 'OpenMP Static', 'OpenMP Dynamic', 'Hybrid Static', 'Hybrid Dynamic');
+xlabel('Number of Testcase(N)', 'FontSize', 16); 
+ylabel('time(sec)', 'FontSize', 16);
+%}
