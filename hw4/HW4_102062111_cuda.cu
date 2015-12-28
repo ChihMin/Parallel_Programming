@@ -82,47 +82,93 @@ __global__ void phaseOne(int *_d, int blockSize, int length,
 }
 
 __global__ void phaseTwoRow(int *_d, int blockSize, int length, 
-                                            int XIndex, int YIndex, int ZIndex) {
+                            int XIndex, int YIndex, int ZIndex) {
     int ii = blockSize * XIndex + threadIdx.x ;
     int jj = blockSize * YIndex + threadIdx.y ;
-/*
+    
+    int iii = blockSize * ZIndex + threadIdx.x;
+    int jjj = blockSize * ZIndex + threadIdx.y; 
+    
+    __shared__ int d[2][40][40];
+
+    int i = threadIdx.x;
+    int j = threadIdx.y;
+
+    d[0][i][j] = _d[ii * length + jj];
+    d[1][i][j] = _d[iii * length + jjj]; 
+    
+    __syncthreads();
+    
+    for (int k = 0; k < blockSize; ++k) {
+        if (d[0][i][j] > d[1][i][k] + d[0][k][j])
+            d[0][i][j] = d[1][i][k] + d[0][k][j];
+        __syncthreads();
+    }
+    __syncthreads();
+    _d[ii * length + jj] = d[0][i][j]; 
+}
+
+__global__ void phaseTwoCol(int *_d, int blockSize, int length, 
+                            int XIndex, int YIndex, int ZIndex) {
+    int ii = blockSize * XIndex + threadIdx.x ;
+    int jj = blockSize * YIndex + threadIdx.y ;
+    
+    int iii = blockSize * ZIndex + threadIdx.x;
+    int jjj = blockSize * ZIndex + threadIdx.y; 
+    
+    __shared__ int d[2][40][40];
+
+    int i = threadIdx.x;
+    int j = threadIdx.y;
+
+    d[0][i][j] = _d[ii * length + jj];
+    d[1][i][j] = _d[iii * length + jjj]; 
+    
+    
+    __syncthreads();
+    
+    for (int k = 0; k < blockSize; ++k) {
+        if (d[0][i][j] > d[0][i][k] + d[1][k][j])
+            d[0][i][j] = d[0][i][k] + d[1][k][j];
+        __syncthreads();
+    }
+    __syncthreads();
+    _d[ii * length + jj] = d[0][i][j]; 
+}
+
+__global__ void phaseThree(int *_d, int blockSize, int length, 
+                            int XIndex, int YIndex, int ZIndex) {
+    int ii = blockSize * XIndex + threadIdx.x ;
+    int jj = blockSize * YIndex + threadIdx.y ;
+    
+    int iRow = blockSize * ZIndex + threadIdx.x;
+    int jRow = blockSize * YIndex + threadIdx.y; 
+    
+    int iCol = blockSize * XIndex + threadIdx.x;
+    int jCol = blockSize * ZIndex + threadIdx.y; 
+    
+
     __shared__ int d[3][40][40];
 
     int i = threadIdx.x;
     int j = threadIdx.y;
 
-    __shared__ int d[40][40];
-    
-    d[threadIdx.x][threadIdx.y] = _d[ii * length + jj];
-    __syncthreads();
-    
-    for (int k = 0; k < blockSize; ++k) {
-        if (d[i][j] > d[i][k] + d[k][j])
-            d[i][j] = d[i][k] + d[k][j];
-        __syncthreads();
-    }
-    __syncthreads();
-    _d[ii * length + jj] = d[i][j]; 
-*/
-/*
     d[0][i][j] = _d[ii * length + jj];
-    for (int k = 0, kk = ZIndex * blockSize; k < blockSize; ++k, ++kk) {
-        if (j == 0)
-            d[1][i][k] = _d[ii * length + kk];
-        if (i == 0)
-            d[2][k][j] = _d[kk * length + jj];
-    }
-
+    d[1][i][j] = _d[iRow * length + jRow]; 
+    d[2][i][j] = _d[iCol * length + jCol];
+    
     __syncthreads();
+    
     for (int k = 0; k < blockSize; ++k) {
-        if (d[0][i][j] > d[1][i][k] + d[2][k][j])
-            d[0][i][j] = d[1][i][k] + d[2][k][j];
+        if (d[0][i][j] > d[2][i][k] + d[1][k][j])
+            d[0][i][j] = d[2][i][k] + d[1][k][j];
         __syncthreads();
     }
     __syncthreads();
-    _d[ii * length + jj] = d[0][i][j];
-*/
+    _d[ii * length + jj] = d[0][i][j]; 
 }
+
+
 int main(int argc, char **argv) {
     
     FILE *fin = fopen(argv[1], "r");
@@ -178,7 +224,7 @@ int main(int argc, char **argv) {
     cudaCheckErrors("copy cuda_length");
 
     // Now only hangle N = 3200 testcase
-    size_t sharedSize = 3 * 40 * 40 ;
+    size_t sharedSize = 40 * 40 ;
     gridSize = 1;
     dim3 blocks(gridSize, gridSize);
     dim3 threads(blockSize, blockSize);
@@ -191,33 +237,26 @@ int main(int argc, char **argv) {
             (cuda_edge, blockSize, length, k, k, k);
  
         // phase two
-    /*
         for (int i = 0; i < blockNum; ++i) {
             if (i != k) {
-                phaseOne<<<blocks, threads, sharedSize>>>
+                phaseTwoCol<<<blocks, threads, sharedSize>>>
                         (cuda_edge, blockSize, length, i, k, k);
             }
         }
-     
+    
         for (int j = 0; j < blockNum; ++j) {
             if (j != k) {
-                floyd_warshall<<<blocks, threads, sharedSize>>>
+                phaseTwoRow<<<blocks, threads, 2 * sharedSize>>>
                         (cuda_edge, blockSize, length, k, j, k);
             }
         }
-
+        
         //phase three
         for (int i = 0; i < blockNum; ++i)
             for (int j = 0; j < blockNum; ++j)
                 if (i != k && j != k)
-                    floyd_warshall<<<blocks, threads, sharedSize>>>
+                    phaseThree<<<blocks, threads, 3 * sharedSize>>>
                             (cuda_edge, blockSize, length, i, j, k);
-    */
-    /*
-        fprintf(stderr, "k = %d\n", k);
-        floyd_warshall<<<blocks, threads, sharedSize>>>
-                    (cuda_edge ,blockSize, length, index);
-    */
     }
     cudaMemcpy(edge, cuda_edge, sizeof(int) * length * length, D2H);
     
