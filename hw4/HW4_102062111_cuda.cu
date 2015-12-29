@@ -175,10 +175,10 @@ __global__ void floyd_warshall(int *d, int blockSize, int length,
 
     int dij = d[ii * length + jj];
     int dik = d[ii * length + kk];
-    int dkj = d[kk * length + jj]; 
+    int dkj = d[kk * length + jj];
     
     if (dij > dik + dkj)
-        d[ii * length + jj] = dik + dkj;   
+       d[ii * length + jj] = dik + dkj;   
 }
 
 
@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
     int length = blockSize * gridSize + 1;
     edge = new int[length * length];
     
-    fprintf(stderr, "grid = %d, block = %d\n", gridSize, blockSize);
+    //fprintf(stderr, "grid = %d, block = %d\n", gridSize, blockSize);
 
     for (int i = 0; i < length; ++i) {
         for (int j = 0; j < length; ++j)
@@ -237,45 +237,101 @@ int main(int argc, char **argv) {
     cudaCheckErrors("copy cuda_length");
 
     // Now only hangle N = 3200 testcase
-    size_t sharedSize = 40 * 40 ;
+    size_t sharedSize = 8 * 8;
     int blockNum = (N + blockSize - 1) / blockSize;
     int blockDimension = 8; 
     gridSize = blockSize / blockDimension;
-    
+    int gridFactor = 1024 / blockSize ;
+    gridFactor *= gridFactor;
+
+
     dim3 blocks(gridSize, gridSize);
     dim3 threads(blockDimension, blockDimension);
-
-    wcout << "blocknum = " << blockNum << endl; 
+    
+    dim3 blockCol(gridSize * gridFactor, gridSize);
+    dim3 blockRow(gridSize, gridSize * gridFactor);
+    int remainBegin = (blockNum / gridFactor) * gridFactor ;  
+    int remain = blockNum - remainBegin;
+    dim3 blockColRemain(gridSize * remain, gridSize);
+    dim3 blockRowRemain(gridSize, gridSize * remain);
+    //wcout << "blocknum = " << blockNum << endl; 
     for (int k = 0; k < blockNum; ++k) {
-        wcout << "k = " << k << endl;
+        //wcout << "k = " << k << endl;
         // phase one
-        for (int cur = 0; cur < blockSize; ++cur) {
-            floyd_warshall<<<blocks, threads>>>
-                (cuda_edge, blockSize, length, k, k, k * blockSize + cur);
+        {
+            for (int cur = 0; cur < blockSize; ++cur) {
+                //wcout << "(" << cur << "/" << blockSize << endl;
+                floyd_warshall<<<blocks, threads>>>
+                    (cuda_edge, blockSize, length, k, k, k * blockSize + cur);
+            
+                cudaCheckErrors("phase one");
+            }
         }
         // phase two
-        for (int i = 0; i < blockNum; ++i) {
-            if (i != k) {
-                for (int cur = 0; cur < blockSize; ++cur)
-                    floyd_warshall<<<blocks, threads>>>
+        {
+            // Column 
+            for (int i = 0; i < blockNum - remain; i = i + gridFactor) {
+                for (int cur = 0; cur < blockSize; cur++) {
+                    floyd_warshall<<<blockCol, threads>>>
                             (cuda_edge, blockSize, length, i, k, k * blockSize + cur);
+                    
+                    cudaCheckErrors("phase two column main");
+                }       
             }
-        }
-        for (int j = 0; j < blockNum; ++j) {
-            if (j != k) {
-                for (int cur = 0; cur < blockSize; ++cur)
-                    floyd_warshall<<<blocks, threads>>>
+        
+            if (remainBegin < blockNum)
+                for (int cur = 0; cur < blockSize; cur++) {
+                    floyd_warshall<<<blockColRemain, threads>>>
+                            (cuda_edge, blockSize, length, remainBegin, k, k * blockSize + cur);
+                    cudaCheckErrors("phase two column remain");
+                }
+            // Row 
+            for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
+                for (int cur = 0; cur < blockSize; ++cur) {
+                    floyd_warshall<<<blockRow, threads>>>
                             (cuda_edge, blockSize, length, k, j, k * blockSize + cur);
+                    cudaCheckErrors("phase two row main");
+                }
             }
-        }
+            if (remainBegin < blockNum)
+                for (int cur = 0; cur < blockSize; cur++) {
+                    floyd_warshall<<<blockRowRemain, threads>>>
+                            (cuda_edge, blockSize, length, k, remainBegin, k * blockSize + cur);
+                    cudaCheckErrors("phase two row remain");
+                }
+        }   
         
         //phase three
-        for (int i = 0; i < blockNum; ++i)
-            for (int j = 0; j < blockNum; ++j)
-                if (i != k && j != k)
-                    for (int cur = 0; cur < blockSize; ++cur)
-                        floyd_warshall<<<blocks, threads, 3 * sharedSize>>>
+        {
+            
+            for (int i = 0; i < blockNum; i++) {
+                for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
+                    for (int cur = 0; cur < blockSize; ++cur) {
+                        floyd_warshall<<<blockRow, threads>>>
                                 (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
+                        cudaCheckErrors("phase three row main");
+                    }
+                }
+                if (remainBegin < blockNum)
+                    for (int cur = 0; cur < blockSize; cur++) {
+                        floyd_warshall<<<blockRowRemain, threads>>>
+                                (cuda_edge, blockSize, length, i, remainBegin, k * blockSize + cur);
+                        cudaCheckErrors("phase three row remain");
+                    }
+            }
+            
+            /* 
+            for (int i = 0; i < blockNum; ++i) {
+                for (int j = 0; j < blockNum; ++j)
+                    if (i != k && j != k)
+                        for (int cur = 0; cur < blockSize; ++cur)
+                            floyd_warshall<<<blocks, threads>>>
+                                    (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
+            }
+            */
+       
+        }
+        
     }
     cudaMemcpy(edge, cuda_edge, sizeof(int) * length * length, D2H);
     
