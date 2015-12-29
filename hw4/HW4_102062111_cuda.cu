@@ -238,12 +238,12 @@ int main(int argc, char **argv) {
 
     // Now only hangle N = 3200 testcase
     size_t sharedSize = 40 * 40 ;
+    int blockNum = (N + blockSize - 1) / blockSize;
     int blockDimension = 8; 
     gridSize = blockSize / blockDimension;
     
     dim3 blocks(gridSize, gridSize);
     dim3 threads(blockDimension, blockDimension);
-    int blockNum = N / blockSize;
 
     wcout << "blocknum = " << blockNum << endl; 
     for (int k = 0; k < blockNum; ++k) {
