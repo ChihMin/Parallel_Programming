@@ -139,9 +139,11 @@ int main(int argc, char **argv) {
         {
             for (int cur = 0; cur < blockSize; ++cur) {
                 //wcout << "(" << cur << "/" << blockSize << endl;
-                floyd_warshall<<<blocks, threads>>>
-                    (gpu[0], blockSize, length, k, k, k * blockSize + cur);
-            
+                for (int id = 0; id < 2; ++id) {
+                    cudaSetDevice(id);
+                    floyd_warshall<<<blocks, threads>>>
+                        (gpu[id], blockSize, length, k, k, k * blockSize + cur);
+                }
                 cudaCheckErrors("phase one");
             }
         }
