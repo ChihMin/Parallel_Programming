@@ -1,3 +1,4 @@
+#include <omp.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 #define INF 1e9
 #define H2D cudaMemcpyHostToDevice
 #define D2H cudaMemcpyDeviceToHost
+#define D2D cudaMemcpyDeviceToDevice
 #define MASK_N 2
 #define MASK_X 5
 #define MASK_Y 5
@@ -81,11 +83,9 @@ int main(int argc, char **argv) {
      
     int N, M;
     int *edge;
-    int *cuda_edge;
-    int *cuda_length;
-    int *nodeNumber;
-    int *index;
-    
+    int *gpu[2];
+    const int deviceNum = 2;
+
     fscanf(fin, "%d %d", &N, &M);
     int gridSize = N % blockSize ? N / blockSize + 1 : N / blockSize;
     int length = blockSize * gridSize + 1;
@@ -105,28 +105,14 @@ int main(int argc, char **argv) {
         b = b - 1;
         edge[a * length + b] = w;
     }
-    cudaSetDevice(0);
-           
-    cudaMalloc((void**)&cuda_edge, sizeof(int) * length * length);
-    cudaCheckErrors("malloc cuda_edge");
-
-    cudaMalloc((void**)&nodeNumber, sizeof(int));
-    cudaCheckErrors("malloc cuda nodeNumber");
-
-    cudaMalloc((void**)&cuda_length, sizeof(int));
-    cudaCheckErrors("malloc cuda_length");
     
-    cudaMalloc((void**)&index, sizeof(int));
-
-    cudaMemcpy(cuda_edge, edge, sizeof(int) * length * length, H2D);
-    cudaCheckErrors("copy cuda_edge");
     
-    cudaMemcpy(nodeNumber, &N, sizeof(int), H2D);
-    cudaCheckErrors("copy nodeNumber");
-    
-    cudaMemcpy(cuda_length, &length, sizeof(int), H2D);
-    cudaCheckErrors("copy cuda_length");
-
+    for (int i = 0; i < deviceNum; ++i) {
+        cudaSetDevice(i);
+        cudaMalloc((void**)&gpu[i], sizeof(int) * length * length);
+        cudaMemcpy(gpu[i], edge, sizeof(int) * length * length, H2D);
+        cudaCheckErrors("melloc & copy gpu");
+    }
     // Now only hangle N = 3200 testcase
     size_t sharedSize = 8 * 8;
     int blockNum = (N + blockSize - 1) / blockSize;
@@ -149,11 +135,12 @@ int main(int argc, char **argv) {
     for (int k = 0; k < blockNum; ++k) {
         //wcout << "k = " << k << endl;
         // phase one
+        cudaSetDevice(0);
         {
             for (int cur = 0; cur < blockSize; ++cur) {
                 //wcout << "(" << cur << "/" << blockSize << endl;
                 floyd_warshall<<<blocks, threads>>>
-                    (cuda_edge, blockSize, length, k, k, k * blockSize + cur);
+                    (gpu[0], blockSize, length, k, k, k * blockSize + cur);
             
                 cudaCheckErrors("phase one");
             }
@@ -163,68 +150,87 @@ int main(int argc, char **argv) {
             // Column 
             for (int i = 0; i < blockNum - remain; i = i + gridFactor) {
                 for (int cur = 0; cur < blockSize; cur++) {
-                    floyd_warshall<<<blockCol, threads>>>
-                            (cuda_edge, blockSize, length, i, k, k * blockSize + cur);
-                    
-                    cudaCheckErrors("phase two column main");
+                    for (int id = 0; id < deviceNum; ++id) {
+                        cudaSetDevice(id);
+                        floyd_warshall<<<blockCol, threads>>>
+                                (gpu[id], blockSize, length, i, k, k * blockSize + cur);
+                        
+                        cudaCheckErrors("phase two column main");
+                    }
                 }       
             }
         
             if (remainBegin < blockNum)
                 for (int cur = 0; cur < blockSize; cur++) {
-                    floyd_warshall<<<blockColRemain, threads>>>
-                            (cuda_edge, blockSize, length, remainBegin, k, k * blockSize + cur);
-                    cudaCheckErrors("phase two column remain");
+                    for (int id = 0; id < deviceNum; ++id) {
+                        cudaSetDevice(id);
+                        floyd_warshall<<<blockColRemain, threads>>>
+                                (gpu[id], blockSize, length, remainBegin, k, k * blockSize + cur);
+                        cudaCheckErrors("phase two column remain");
+                    }
                 }
             // Row 
             for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
                 for (int cur = 0; cur < blockSize; ++cur) {
-                    floyd_warshall<<<blockRow, threads>>>
-                            (cuda_edge, blockSize, length, k, j, k * blockSize + cur);
-                    cudaCheckErrors("phase two row main");
+                    for (int id = 0; id < deviceNum; ++id) {
+                        cudaSetDevice(id);
+                        floyd_warshall<<<blockRow, threads>>>
+                                (gpu[id], blockSize, length, k, j, k * blockSize + cur);
+                        cudaCheckErrors("phase two row main");
+                    }
                 }
             }
             if (remainBegin < blockNum)
                 for (int cur = 0; cur < blockSize; cur++) {
-                    floyd_warshall<<<blockRowRemain, threads>>>
-                            (cuda_edge, blockSize, length, k, remainBegin, k * blockSize + cur);
-                    cudaCheckErrors("phase two row remain");
+                    for (int id = 0; id < deviceNum; ++id) {
+                        cudaSetDevice(id);
+                        floyd_warshall<<<blockRowRemain, threads>>>
+                                (gpu[id], blockSize, length, k, remainBegin, k * blockSize + cur);
+                        cudaCheckErrors("phase two row remain");
+                    }
                 }
         }   
         
         //phase three
         {
-            
-            for (int i = 0; i < blockNum; i++) {
-                for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
-                    for (int cur = 0; cur < blockSize; ++cur) {
-                        floyd_warshall<<<blockRow, threads>>>
-                                (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
-                        cudaCheckErrors("phase three row main");
-                    }
+            #pragma omp parallel num_threads(2)
+            { 
+                int thread = omp_get_thread_num();
+                int begin, end;
+                cudaSetDevice(thread);
+                
+                if (thread == 0) {
+                    begin = 0;
+                    end = blockNum / 2;
+                } else {
+                    begin = blockNum / 2;
+                    end = blockNum;
                 }
-                if (remainBegin < blockNum)
-                    for (int cur = 0; cur < blockSize; cur++) {
-                        floyd_warshall<<<blockRowRemain, threads>>>
-                                (cuda_edge, blockSize, length, i, remainBegin, k * blockSize + cur);
-                        cudaCheckErrors("phase three row remain");
+                for (int i = begin; i < end; i++) {
+                    for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
+                        for (int cur = 0; cur < blockSize; ++cur) {
+                            floyd_warshall<<<blockRow, threads>>>
+                                    (gpu[thread], blockSize, length, i, j, k * blockSize + cur);
+                            cudaCheckErrors("phase three row main");
+                        }
                     }
+                    if (remainBegin < blockNum)
+                        for (int cur = 0; cur < blockSize; cur++) {
+                            floyd_warshall<<<blockRowRemain, threads>>>
+                                    (gpu[thread], blockSize, length, i, remainBegin, k * blockSize + cur);
+                            cudaCheckErrors("phase three row remain");
+                        }
+                }    
             }
-            
-            /* 
-            for (int i = 0; i < blockNum; ++i) {
-                for (int j = 0; j < blockNum; ++j)
-                    if (i != k && j != k)
-                        for (int cur = 0; cur < blockSize; ++cur)
-                            floyd_warshall<<<blocks, threads>>>
-                                    (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
-            }
-            */
-       
+            int offset = (blockNum / 2) * blockSize * length ; 
+            int copySize = length * length - offset;
+            cudaMemcpy(gpu[1], gpu[0], sizeof(int) * offset, D2D);
+            cudaMemcpy(gpu[0] + offset, gpu[1] + offset, sizeof(int) * copySize, D2D);
         }
         
     }
-    cudaMemcpy(edge, cuda_edge, sizeof(int) * length * length, D2H);
+    cudaSetDevice(0);
+    cudaMemcpy(edge, gpu[1], sizeof(int) * length * length, D2H);
     
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N - 1; ++j) {
