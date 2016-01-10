@@ -15,6 +15,19 @@
 #define MASK_Y 5
 #define SCALE  8
 
+#define timer(type) \
+    cudaEventCreate(&type##_start); \
+    cudaEventCreate(&type##_stop);
+
+#define record(type) \
+    cudaEventRecord(type)
+
+#define elapsed(type, start, stop) \
+    cudaEventElapsedTime(&type, start, stop)
+
+#define sync(type) \
+    cudaEventSynchronize(type)
+
 #define cudaCheckErrors(msg) \
     do { \
         cudaError_t __err = cudaGetLastError(); \
@@ -76,6 +89,22 @@ __global__ void floyd_warshall(int *d, int blockSize, int length,
 
 
 int main(int argc, char **argv) {
+
+    cudaEvent_t total_start, total_stop;
+    cudaEvent_t com_start, com_stop;
+    cudaEvent_t mem_start, mem_stop;
+    cudaEvent_t io_start, io_stop;
+    
+    timer(total);
+    timer(com);
+    timer(mem);
+    timer(io); 
+    
+    cudaEventRecord(total_start); 
+    
+    float total, compute, memory, IO;
+    float mem_part, IO_part, com_part;
+    total = compute = memory = IO = 0; 
     
     FILE *fin = fopen(argv[1], "r");
     FILE *fout = fopen(argv[2], "w");
@@ -98,6 +127,7 @@ int main(int argc, char **argv) {
             edge[i * length + j] = INF;
         edge[i * length + i] = 0;
     }
+    record(io_start);
     while (M--) {
         int a, b, w;
         fscanf(fin, "%d %d %d", &a, &b, &w);
@@ -105,13 +135,25 @@ int main(int argc, char **argv) {
         b = b - 1;
         edge[a * length + b] = w;
     }
+    record(io_stop);
+    sync(io_stop);
+    elapsed(IO_part, io_start, io_stop);
+    IO += IO_part;
     
     
     for (int i = 0; i < deviceNum; ++i) {
         cudaSetDevice(i);
         cudaMalloc((void**)&gpu[i], sizeof(int) * length * length);
+
+        if (i == 0) record(mem_start);
         cudaMemcpy(gpu[i], edge, sizeof(int) * length * length, H2D);
         cudaCheckErrors("melloc & copy gpu");
+        if (i == 0) { 
+            record(mem_stop);
+            sync(mem_stop);
+            elapsed(mem_part, mem_start, mem_stop);
+            memory += mem_part;
+        }
     }
     // Now only hangle N = 3200 testcase
     size_t sharedSize = 8 * 8;
@@ -132,7 +174,10 @@ int main(int argc, char **argv) {
     dim3 blockColRemain(gridSize * remain, gridSize);
     dim3 blockRowRemain(gridSize, gridSize * remain);
     //wcout << "blocknum = " << blockNum << endl; 
+    
+    cudaSetDevice(0);
     for (int k = 0; k < blockNum; ++k) {
+        record(com_start);
         //wcout << "k = " << k << endl;
         // phase one
         cudaSetDevice(0);
@@ -224,16 +269,31 @@ int main(int argc, char **argv) {
                         }
                 }    
             }
-            int offset = (blockNum / 2) * blockSize * length ; 
-            int copySize = length * length - offset;
-            cudaMemcpy(gpu[1], gpu[0], sizeof(int) * offset, D2D);
-            cudaMemcpy(gpu[0] + offset, gpu[1] + offset, sizeof(int) * copySize, D2D);
         }
+
+        cudaDeviceSynchronize();
+        
+        record(com_stop);
+        sync(com_stop);
+        elapsed(com_part, com_start, com_stop);
+        compute += com_part;
+
+        int offset = (blockNum / 2) * blockSize * length ; 
+        int copySize = length * length - offset;
+        cudaMemcpy(gpu[1], gpu[0], sizeof(int) * offset, D2D);
+        cudaMemcpy(gpu[0] + offset, gpu[1] + offset, sizeof(int) * copySize, D2D);
         
     }
     cudaSetDevice(0);
+    
+    record(mem_start);
+    record(mem_stop);
+    sync(mem_stop);
+    elapsed(mem_part, mem_start, mem_stop);
+    memory += mem_part; 
     cudaMemcpy(edge, gpu[1], sizeof(int) * length * length, D2H);
     
+    record(io_start);
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N - 1; ++j) {
             if (edge[i * length + j] == INF)
@@ -246,5 +306,18 @@ int main(int argc, char **argv) {
         else
             fprintf(fout, "%d\n", edge[i * length + N - 1]);
     }
+    record(io_stop);
+    sync(io_stop);
+    elapsed(IO_part, io_start, io_stop);
+    IO += IO_part;
+
+    cudaEventRecord(total_stop);
+    cudaEventSynchronize(total_stop);
+    cudaEventElapsedTime(&total, total_start, total_stop);
+    fprintf(stderr, "\n\n");
+    fprintf(stderr, "TOTAL = %f\n", total);
+    fprintf(stderr, "COMPUTE = %f\n", compute);
+    fprintf(stderr, "MEMORY = %f\n", memory);
+    fprintf(stderr, "IO = %f\n", IO);
     return 0;
 }
