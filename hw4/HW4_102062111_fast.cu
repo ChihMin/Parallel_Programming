@@ -8,6 +8,19 @@
 #define INF 1e9
 #define H2D cudaMemcpyHostToDevice
 #define D2H cudaMemcpyDeviceToHost
+#define timer(type) \
+    cudaEventCreate(&type##_start); \
+    cudaEventCreate(&type##_stop);
+
+#define record(type) \
+    cudaEventRecord(type)
+
+#define elapsed(type, start, stop) \
+    cudaEventElapsedTime(&type, start, stop)
+
+#define sync(type) \
+    cudaEventSynchronize(type)
+
 #define MASK_N 2
 #define MASK_X 5
 #define MASK_Y 5
@@ -58,6 +71,7 @@ void DisplayHeader()
     }
 }
 
+
 __global__ void floyd_warshall(int *d, int blockSize, int length, 
                             int XIndex, int YIndex, int kk) {
     int ii = blockSize * XIndex + blockIdx.x * blockDim.x + threadIdx.x;
@@ -94,8 +108,24 @@ __global__ void floyd_warshall_whole(int *d, int blockSize, int length,
     // d[ii * length + jj] = dij[threadIdx.x][threadIdx.y];   
 }
 
+
 int main(int argc, char **argv) {
+    cudaEvent_t total_start, total_stop;
+    cudaEvent_t com_start, com_stop;
+    cudaEvent_t mem_start, mem_stop;
+    cudaEvent_t io_start, io_stop;
     
+    timer(total);
+    timer(com);
+    timer(mem);
+    timer(io); 
+    
+    cudaEventRecord(total_start); 
+        
+    float total, compute, memory, IO;
+    float mem_part, IO_part;
+    total = compute = memory = IO = 0; 
+        
     FILE *fin = fopen(argv[1], "r");
     FILE *fout = fopen(argv[2], "w");
     int blockSize = atoi(argv[3]);
@@ -103,9 +133,6 @@ int main(int argc, char **argv) {
     int N, M;
     int *edge;
     int *cuda_edge;
-    int *cuda_length;
-    int *nodeNumber;
-    int *index;
     
     fscanf(fin, "%d %d", &N, &M);
     int gridSize = N % blockSize ? N / blockSize + 1 : N / blockSize;
@@ -119,6 +146,9 @@ int main(int argc, char **argv) {
             edge[i * length + j] = INF;
         edge[i * length + i] = 0;
     }
+
+
+    record(io_start);
     while (M--) {
         int a, b, w;
         fscanf(fin, "%d %d %d", &a, &b, &w);
@@ -126,37 +156,31 @@ int main(int argc, char **argv) {
         b = b - 1;
         edge[a * length + b] = w;
     }
+    record(io_stop);
+    sync(io_stop);
+    elapsed(IO_part, io_start, io_stop);
+    IO += IO_part;
+
     cudaSetDevice(0);
-           
+    
     cudaMalloc((void**)&cuda_edge, sizeof(int) * length * length);
     cudaCheckErrors("malloc cuda_edge");
 
-    cudaMalloc((void**)&nodeNumber, sizeof(int));
-    cudaCheckErrors("malloc cuda nodeNumber");
-
-    cudaMalloc((void**)&cuda_length, sizeof(int));
-    cudaCheckErrors("malloc cuda_length");
-    
-    cudaMalloc((void**)&index, sizeof(int));
-
+    record(mem_start);     
     cudaMemcpy(cuda_edge, edge, sizeof(int) * length * length, H2D);
     cudaCheckErrors("copy cuda_edge");
-    
-    cudaMemcpy(nodeNumber, &N, sizeof(int), H2D);
-    cudaCheckErrors("copy nodeNumber");
-    
-    cudaMemcpy(cuda_length, &length, sizeof(int), H2D);
-    cudaCheckErrors("copy cuda_length");
+    record(mem_stop);
+    sync(mem_stop);
+    elapsed(mem_part, mem_start, mem_stop);
+    memory += mem_part;
 
     // Now only hangle N = 3200 testcase
-    size_t sharedSize = 8 * 8 * 4;
+    // size_t sharedSize = 8 * 8;
     int blockNum = (N + blockSize - 1) / blockSize;
     int blockDimension = 8; 
     gridSize = blockSize / blockDimension;
-    int gridFactor = 2048 / blockSize ;
+    int gridFactor = 1024 / blockSize ;
     gridFactor *= gridFactor;
-
-    cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
 
 
     dim3 blocks(gridSize, gridSize);
@@ -169,6 +193,8 @@ int main(int argc, char **argv) {
     dim3 blockColRemain(gridSize * remain, gridSize);
     dim3 blockRowRemain(gridSize, gridSize * remain);
     //wcout << "blocknum = " << blockNum << endl; 
+    
+    cudaEventRecord(com_start);
     for (int k = 0; k < blockNum; ++k) {
         //wcout << "k = " << k << endl;
         // phase one
@@ -220,7 +246,7 @@ int main(int argc, char **argv) {
             
             for (int i = 0; i < blockNum; i++) {
                 for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
-                    int cur = 0;
+                    int cur  = 0;
                     //for (int cur = 0; cur < blockSize; ++cur) {
                         floyd_warshall_whole<<<blockRow, threads>>>
                                 (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
@@ -236,22 +262,24 @@ int main(int argc, char **argv) {
                     //}
                 }
             }
-            
-            /* 
-            for (int i = 0; i < blockNum; ++i) {
-                for (int j = 0; j < blockNum; ++j)
-                    if (i != k && j != k)
-                        for (int cur = 0; cur < blockSize; ++cur)
-                            floyd_warshall<<<blocks, threads>>>
-                                    (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
-            }
-            */
-       
         }
         
     }
+    cudaDeviceSynchronize();
+    cudaEventRecord(com_stop);
+    cudaEventSynchronize(com_stop);
+    cudaEventElapsedTime(&compute, com_start, com_stop);
+
+     
+    record(mem_start);
     cudaMemcpy(edge, cuda_edge, sizeof(int) * length * length, D2H);
+    record(mem_stop);
+    sync(mem_stop);
+    elapsed(mem_part, mem_start, mem_stop);
+    memory += mem_part; 
     
+
+    record(io_start);
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N - 1; ++j) {
             if (edge[i * length + j] == INF)
@@ -264,5 +292,20 @@ int main(int argc, char **argv) {
         else
             fprintf(fout, "%d\n", edge[i * length + N - 1]);
     }
+    record(io_stop);
+    sync(io_stop);
+    elapsed(IO_part, io_start, io_stop);
+    IO += IO_part;
+
+    cudaEventRecord(total_stop);
+    cudaEventSynchronize(total_stop);
+    cudaEventElapsedTime(&total, total_start, total_stop);
+    
+    fprintf(stderr, "\n\n");
+    fprintf(stderr, "TOTAL = %f\n", total);
+    fprintf(stderr, "COMPUTE = %f\n", compute);
+    fprintf(stderr, "MEMORY = %f\n", memory);
+    fprintf(stderr, "IO = %f\n", IO);
+    
     return 0;
 }

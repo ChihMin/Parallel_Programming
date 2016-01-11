@@ -25,6 +25,19 @@
 #define SCALE  8
 #define ROOT 0
 
+#define timer(type) \
+    cudaEventCreate(&type##_start); \
+    cudaEventCreate(&type##_stop);
+
+#define record(type) \
+    cudaEventRecord(type)
+
+#define elapsed(type, start, stop) \
+    cudaEventElapsedTime(&type, start, stop)
+
+#define sync(type) \
+    cudaEventSynchronize(type)
+
 #define cudaCheckErrors(msg) \
     do { \
         cudaError_t __err = cudaGetLastError(); \
@@ -112,7 +125,28 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    fprintf(stderr, "rank = %d, size = %d\n", rank, size);
+    
+    cudaSetDevice(rank);
+     
+    cudaEvent_t total_start, total_stop;
+    cudaEvent_t com_start, com_stop;
+    cudaEvent_t mem_start, mem_stop;
+    cudaEvent_t io_start, io_stop;
+    cudaEvent_t trans_start, trans_stop; 
+
+    timer(total);
+    timer(com);
+    timer(mem);
+    timer(io); 
+    timer(trans);
+    
+    cudaEventRecord(total_start); 
+    
+    float total, compute, memory, IO, trans;
+    float mem_part, IO_part, com_part, trans_part;
+    total = compute = memory = IO = trans = 0; 
+    
+    // fprintf(stderr, "rank = %d, size = %d\n", rank, size);
      
     MPI_Status status;
 
@@ -137,6 +171,8 @@ int main(int argc, char **argv) {
                 edge[i * length + j] = INF;
             edge[i * length + i] = 0;
         }
+
+        record(io_start);
         while (M--) {
             int a, b, w;
             fscanf(fin, "%d %d %d", &a, &b, &w);
@@ -144,6 +180,11 @@ int main(int argc, char **argv) {
             b = b - 1;
             edge[a * length + b] = w;
         }
+        record(io_stop);
+        sync(io_stop);
+        elapsed(IO_part, io_start, io_stop);
+        IO += IO_part;
+        
         send(&N, sizeof(int), 1);
         send(&gridSize, sizeof(int), 1);
         send(&length, sizeof(int), 1);
@@ -156,14 +197,21 @@ int main(int argc, char **argv) {
         recv(&length, sizeof(int), ROOT, status);
         cudaMallocHost((void**)&edge, sizeof(int) * length * length);
         recv(edge, sizeof(int) * length * length, ROOT, status);
-        fprintf(stderr, "RANK %d, length = %d, gridSize = %d\n", rank, length, gridSize);      
+        //fprintf(stderr, "RANK %d, length = %d, gridSize = %d\n", rank, length, gridSize);      
     }
     
     cudaSetDevice(rank);
     cudaMalloc((void**)&gpu[rank], sizeof(int) * length * length);
+    
+    if(rank == 0)   record(mem_start);
     cudaMemcpy(gpu[rank], edge, sizeof(int) * length * length, H2D);
     cudaCheckErrors("memcpy error");   
-    
+    if (rank == 0) {
+        record(mem_stop);
+        sync(mem_stop);
+        elapsed(mem_part, mem_start, mem_stop);
+        memory += mem_part;
+    }
     size_t sharedSize = 8 * 8;
     int blockNum = (N + blockSize - 1) / blockSize;
     int blockDimension = 8; 
@@ -181,49 +229,11 @@ int main(int argc, char **argv) {
     dim3 blockColRemain(gridSize * remain, gridSize);
     dim3 blockRowRemain(gridSize, gridSize * remain);
     
-    fprintf(stderr, "rank %d, gpu = %p \n", rank, gpu[rank]);   
-/*
-    if (rank == 0) { 
-        send(&gpu[0], sizeof(int*), 1);
-    }
-    else {
-        recv(&gpu[0], sizeof(int*), 0, status);
-    }
-    if (rank != 0) {
-        fprintf(stderr, "gpu[0] = %p, gpu[1] = %p", gpu[0], gpu[1]); 
-        floyd_warshall<<<blocks, threads>>>(gpu[0], blockSize, length, 0, 0, 0); 
-        cudaCheckErrors("launch kernel");
-     }
-*/
-/*
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    // fprintf(stderr, "rank %d, gpu = %p \n", rank, gpu[rank]);   
     
-    cudaEventRecord(start);
-    int n = 5120 / 256;
-    for (int i = 0; i < n; ++i) {
-        if (rank == 0) {
-            cudaMemcpy(edge, gpu[0], sizeof(int) * length * length, D2H);
-            send(edge, sizeof(int) * length * length, 1);
-            recv(edge, sizeof(int) * length * length, 1, status);
-            cudaMemcpy(gpu[0], edge, sizeof(int) * length * length, H2D);
-        } else {
-            recv(edge, sizeof(int) * length * length, 0, status);
-            cudaMemcpy(gpu[1], edge, sizeof(int) * length * length, H2D);
-            cudaMemcpy(edge, gpu[1], sizeof(int) * length * length, D2H);
-            send(edge, sizeof(int) * length * length, 0);
-        }
-        cudaCheckErrors("memcpy D2D");
-    }
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-
-    float time;
-    cudaEventElapsedTime(&time, start, stop);
-    fprintf(stderr, "time = %f\n", time);
-*/
+    
     for (int k = 0; k < blockNum; ++k) {
+        record(com_start);
         //wcout << "rank = " << rank <<  "k = " << k  << ", blocknum = " << blockNum << endl;
         // phase one
         {
@@ -281,27 +291,55 @@ int main(int argc, char **argv) {
             }
             for (int i = begin; i < end; i++) {
                 for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
-                    int cur = 0;
-                    floyd_warshall_whole<<<blockRow, threads>>>
-                            (gpu[thread], blockSize, length, i, j, k * blockSize + cur);
-                    cudaCheckErrors("phase three row main");
+                    for (int cur = 0; cur < 1; ++cur) {
+                        floyd_warshall_whole<<<blockRow, threads>>>
+                                (gpu[thread], blockSize, length, i, j, k * blockSize + cur);
+                        cudaCheckErrors("phase three row main");
+                    }
                 }
-                if (remainBegin < blockNum) {
-                    int cur = 0;
-                    floyd_warshall_whole<<<blockRowRemain, threads>>>
-                            (gpu[thread], blockSize, length, i, remainBegin, k * blockSize + cur);
-                    cudaCheckErrors("phase three row remain");
-                }
+                if (remainBegin < blockNum)
+                    for (int cur = 0; cur < 1; cur++) {
+                        floyd_warshall_whole<<<blockRowRemain, threads>>>
+                                (gpu[thread], blockSize, length, i, remainBegin, k * blockSize + cur);
+                        cudaCheckErrors("phase three row remain");
+                    }
             }    
         }
+        
+        cudaDeviceSynchronize();
+        
+        record(com_stop);
+        sync(com_stop);
+        elapsed(com_part, com_start, com_stop);
+        compute += com_part;
+        
         int offset = (blockNum / 2) * blockSize * length ; 
         int copySize = length * length - offset;
         if (rank == 0) {
-            cudaMemcpy(edge, gpu[0], sizeof(int) * offset, D2H);
-            send(edge, sizeof(int) * offset, 1);
-            recv(edge + offset, sizeof(int) * copySize, 1, status);
-            cudaMemcpy(gpu[0] + offset, edge + offset, sizeof(int) * copySize, H2D);
-            cudaCheckErrors("rank ROOT memcpy D2D");
+            record(mem_start); 
+                cudaMemcpy(edge, gpu[0], sizeof(int) * offset, D2H);
+            record(mem_stop);
+            sync(mem_stop);
+            elapsed(mem_part, mem_start, mem_stop);
+            memory += mem_part; 
+            
+            
+            record(trans_start); 
+                send(edge, sizeof(int) * offset, 1);
+                recv(edge + offset, sizeof(int) * copySize, 1, status);
+            record(trans_stop);
+            sync(trans_stop);
+            elapsed(trans_part, trans_start, trans_stop);
+            trans += trans_part;
+            
+            record(mem_start); 
+                cudaMemcpy(gpu[0] + offset, edge + offset, sizeof(int) * copySize, H2D);
+                cudaCheckErrors("rank ROOT memcpy D2D");
+            record(mem_stop);
+            sync(mem_stop);
+            elapsed(mem_part, mem_start, mem_stop);
+            memory += mem_part; 
+            
         } else {
             recv(edge, sizeof(int) * offset, ROOT, status);
             cudaMemcpy(gpu[1], edge, sizeof(int) * offset, H2D);
@@ -311,6 +349,7 @@ int main(int argc, char **argv) {
         }
     }
     if (rank == 0) {
+        record(io_start);
         FILE *fout = fopen(argv[2], "w");
         for (int i = 0; i < N; ++i) {
             for (int j = 0; j < N - 1; ++j) {
@@ -324,9 +363,26 @@ int main(int argc, char **argv) {
             else
                 fprintf(fout, "%d\n", edge[i * length + N - 1]);
        }
-       fclose(fout);
+        record(io_stop);
+        sync(io_stop);
+        elapsed(IO_part, io_start, io_stop);
+        IO += IO_part;
+        fclose(fout);
     }
         
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    cudaEventRecord(total_stop);
+    cudaEventSynchronize(total_stop);
+    cudaEventElapsedTime(&total, total_start, total_stop);
+    if (rank == 0) {
+        fprintf(stderr, "\n\n");
+        fprintf(stderr, "TOTAL = %f\n", total);
+        fprintf(stderr, "COMPUTE = %f\n", compute);
+        fprintf(stderr, "COMMUNICATE = %f\n", trans);
+        fprintf(stderr, "MEMORY = %f\n", memory);
+        fprintf(stderr, "IO = %f\n", IO);
+    }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();   
     return 0;
