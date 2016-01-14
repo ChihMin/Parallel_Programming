@@ -76,8 +76,8 @@ void DisplayHeader()
 
 __global__ void floyd_warshall(int *d, int blockSize, int length, 
                             int XIndex, int YIndex, int kk) {
-    int ii = blockSize * XIndex + blockIdx.x * blockDim.x + threadIdx.x;
-    int jj = blockSize * YIndex + blockIdx.y * blockDim.y + threadIdx.y; 
+    int ii = blockSize * XIndex + blockIdx.x;
+    int jj = blockSize * YIndex + threadIdx.x; 
 
     int dij = d[ii * length + jj];
     int dik = d[ii * length + kk];
@@ -89,8 +89,8 @@ __global__ void floyd_warshall(int *d, int blockSize, int length,
 
 __global__ void floyd_warshall_whole(int *d, int blockSize, int length, 
                             int XIndex, int YIndex, int ZIndex) {
-    int ii = blockSize * XIndex + blockIdx.x * blockDim.x + threadIdx.x;
-    int jj = blockSize * YIndex + blockIdx.y * blockDim.y + threadIdx.y; 
+    int ii = blockSize * XIndex + blockIdx.x * blockDim.x + threadIdx.y;
+    int jj = blockSize * YIndex + blockIdx.y * blockDim.y + threadIdx.x; 
     //__shared__ int dij[8][8];
     
     // dij[threadIdx.x][threadIdx.y] = d[ii * length + jj];
@@ -180,7 +180,7 @@ int main(int argc, char **argv) {
     // Now only hangle N = 3200 testcase
     size_t sharedSize = 8 * 8;
     int blockNum = (N + blockSize - 1) / blockSize;
-    int blockDimension = 8; 
+    int blockDimension = 32; 
     gridSize = blockSize / blockDimension;
     int gridFactor = 1024 / blockSize ;
     gridFactor *= gridFactor;
@@ -208,7 +208,7 @@ int main(int argc, char **argv) {
                 //wcout << "(" << cur << "/" << blockSize << endl;
                 for (int id = 0; id < 2; ++id) {
                     cudaSetDevice(id);
-                    floyd_warshall<<<blocks, threads>>>
+                    floyd_warshall<<<blockSize, blockSize>>>
                         (gpu[id], blockSize, length, k, k, k * blockSize + cur);
                 }
                 cudaCheckErrors("phase one");
@@ -217,11 +217,11 @@ int main(int argc, char **argv) {
         // phase two
         {
             // Column 
-            for (int i = 0; i < blockNum - remain; i = i + gridFactor) {
+            for (int i = 0; i < blockNum; i = ++i) {
                 for (int cur = 0; cur < blockSize; cur++) {
                     for (int id = 0; id < deviceNum; ++id) {
                         cudaSetDevice(id);
-                        floyd_warshall<<<blockCol, threads>>>
+                        floyd_warshall<<<blockSize, blockSize>>>
                                 (gpu[id], blockSize, length, i, k, k * blockSize + cur);
                         
                         cudaCheckErrors("phase two column main");
@@ -229,35 +229,17 @@ int main(int argc, char **argv) {
                 }       
             }
         
-            if (remainBegin < blockNum)
-                for (int cur = 0; cur < blockSize; cur++) {
-                    for (int id = 0; id < deviceNum; ++id) {
-                        cudaSetDevice(id);
-                        floyd_warshall<<<blockColRemain, threads>>>
-                                (gpu[id], blockSize, length, remainBegin, k, k * blockSize + cur);
-                        cudaCheckErrors("phase two column remain");
-                    }
-                }
             // Row 
-            for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
+            for (int j = 0; j < blockNum; ++j) {
                 for (int cur = 0; cur < blockSize; ++cur) {
                     for (int id = 0; id < deviceNum; ++id) {
                         cudaSetDevice(id);
-                        floyd_warshall<<<blockRow, threads>>>
+                        floyd_warshall<<<blockSize, blockSize>>>
                                 (gpu[id], blockSize, length, k, j, k * blockSize + cur);
                         cudaCheckErrors("phase two row main");
                     }
                 }
             }
-            if (remainBegin < blockNum)
-                for (int cur = 0; cur < blockSize; cur++) {
-                    for (int id = 0; id < deviceNum; ++id) {
-                        cudaSetDevice(id);
-                        floyd_warshall<<<blockRowRemain, threads>>>
-                                (gpu[id], blockSize, length, k, remainBegin, k * blockSize + cur);
-                        cudaCheckErrors("phase two row remain");
-                    }
-                }
         }   
         
         //phase three
@@ -275,6 +257,7 @@ int main(int argc, char **argv) {
                     begin = blockNum / 2;
                     end = blockNum;
                 }
+                
                 for (int i = begin; i < end; i++) {
                     for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
                         for (int cur = 0; cur < 1; ++cur) {
