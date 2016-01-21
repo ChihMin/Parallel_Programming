@@ -280,18 +280,23 @@ int main(int argc, char **argv) {
 
         int offset = (blockNum / 2) * blockSize * length ; 
         int copySize = length * length - offset;
-        cudaMemcpy(gpu[1], gpu[0], sizeof(int) * offset, D2D);
-        cudaMemcpy(gpu[0] + offset, gpu[1] + offset, sizeof(int) * copySize, D2D);
+        record(mem_start);
+            cudaMemcpy(gpu[1], gpu[0], sizeof(int) * offset, D2D);
+            cudaMemcpy(gpu[0] + offset, gpu[1] + offset, sizeof(int) * copySize, D2D);
+        record(mem_stop);
+        sync(mem_stop);
+        elapsed(mem_part, mem_start, mem_stop);
+        memory += mem_part; 
         
     }
     cudaSetDevice(0);
     
     record(mem_start);
+    cudaMemcpy(edge, gpu[1], sizeof(int) * length * length, D2H);
     record(mem_stop);
     sync(mem_stop);
     elapsed(mem_part, mem_start, mem_stop);
     memory += mem_part; 
-    cudaMemcpy(edge, gpu[1], sizeof(int) * length * length, D2H);
     
     record(io_start);
     for (int i = 0; i < N; ++i) {
