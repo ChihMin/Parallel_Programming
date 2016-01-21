@@ -100,7 +100,7 @@ ylabel('Points', 'FontSize', 16);
 
 %% Best
 clear;
-filename = 'MS_Hybrid_static_10000';
+filename = 'MS_Hybrid_dynamic_10000';
 filename = strsplit(filename, ' ');
 data(1:4, 1:12) = double(1);
 count(1:4, 1:12) = 0;

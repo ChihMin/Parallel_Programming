@@ -85,6 +85,29 @@ __global__ void floyd_warshall(int *d, int blockSize, int length,
        d[ii * length + jj] = dik + dkj;   
 }
 
+__global__ void floyd_warshall_whole(int *d, int blockSize, int length, 
+                            int XIndex, int YIndex, int ZIndex) {
+    int ii = blockSize * XIndex + blockIdx.x * blockDim.x + threadIdx.x;
+    int jj = blockSize * YIndex + blockIdx.y * blockDim.y + threadIdx.y; 
+    //__shared__ int dij[8][8];
+    
+    // dij[threadIdx.x][threadIdx.y] = d[ii * length + jj];
+    for (int cur = 0; cur < blockSize; ++cur) {
+        int kk = ZIndex + cur;
+        int dij = d[ii * length + jj]; 
+        int dik = d[ii * length + kk];
+        int dkj = d[kk * length + jj];
+        
+        if (dij > dik + dkj)
+            d[ii * length + jj] = dik + dkj;      
+/*
+        if (dij[threadIdx.x][threadIdx.y] > dik + dkj)
+           dij[threadIdx.x][threadIdx.y] = dik + dkj;
+*/
+    }
+    // d[ii * length + jj] = dij[threadIdx.x][threadIdx.y];   
+}
+
 
 int main(int argc, char **argv) {
     cudaEvent_t total_start, total_stop;
@@ -223,30 +246,22 @@ int main(int argc, char **argv) {
             
             for (int i = 0; i < blockNum; i++) {
                 for (int j = 0; j < blockNum - remain; j = j + gridFactor) {
-                    for (int cur = 0; cur < blockSize; ++cur) {
-                        floyd_warshall<<<blockRow, threads>>>
+                    int cur  = 0;
+                    //for (int cur = 0; cur < blockSize; ++cur) {
+                        floyd_warshall_whole<<<blockRow, threads>>>
                                 (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
                         cudaCheckErrors("phase three row main");
-                    }
+                    //}
                 }
-                if (remainBegin < blockNum)
-                    for (int cur = 0; cur < blockSize; cur++) {
-                        floyd_warshall<<<blockRowRemain, threads>>>
+                if (remainBegin < blockNum) {
+                    int cur = 0;
+                    //for (int cur = 0; cur < blockSize; cur++) {
+                        floyd_warshall_whole<<<blockRowRemain, threads>>>
                                 (cuda_edge, blockSize, length, i, remainBegin, k * blockSize + cur);
                         cudaCheckErrors("phase three row remain");
-                    }
+                    //}
+                }
             }
-            
-            /* 
-            for (int i = 0; i < blockNum; ++i) {
-                for (int j = 0; j < blockNum; ++j)
-                    if (i != k && j != k)
-                        for (int cur = 0; cur < blockSize; ++cur)
-                            floyd_warshall<<<blocks, threads>>>
-                                    (cuda_edge, blockSize, length, i, j, k * blockSize + cur);
-            }
-            */
-       
         }
         
     }
